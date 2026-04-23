@@ -1,0 +1,39 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+@import '@xyflow/react/dist/style.css';
+
+:root {
+  --bg: #f3efe7;
+  --bg-strong: #ebe5d9;
+  --panel: rgba(255, 252, 247, 0.88);
+  --panel-strong: #fffaf3;
+  --line: rgba(64, 44, 22, 0.12);
+  --line-strong: rgba(64, 44, 22, 0.22);
+  --text: #20170f;
+  --muted: #6f6254;
+  --accent: #1f7a61;
+  --accent-soft: rgba(31, 122, 97, 0.12);
+  --warning: #b65a28;
+  --danger: #9e3b2f;
+  --shadow: 0 20px 45px rgba(70, 52, 30, 0.08);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+  color: var(--text);
+  background:
+    radial-gradient(circle at top left, rgba(255,255,255,0.65), transparent 30%),
+    radial-gradient(circle at bottom right, rgba(232,220,196,0.6), transparent 28%),
+    var(--bg);
+  font-family: 'SF Pro Display', 'Segoe UI', sans-serif;
+}

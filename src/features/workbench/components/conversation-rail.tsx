@@ -3,7 +3,7 @@
 import { Panel } from '@/components/ui/panel';
 import { Pill } from '@/components/ui/pill';
 import { useWorkbenchStore } from '@/features/workbench/store';
-import type { ChatMessage, ConversationThread } from '@/features/workbench/types';
+import type { ChatMessage, ConversationThread, LeftRailView, TeamDepartment } from '@/features/workbench/types';
 
 type PendingGroup = {
   projectName: string;
@@ -139,35 +139,97 @@ function ManagerDecisionCards({ pendingGroups }: { pendingGroups: PendingGroup[]
   );
 }
 
+function LeftRailTabs({ selectedView }: { selectedView: LeftRailView }) {
+  const setLeftRailView = useWorkbenchStore((state) => state.setLeftRailView);
+
+  return (
+    <div className="grid w-full max-w-[188px] grid-cols-2 rounded-full border border-[var(--line)] bg-white/70 p-1">
+      {[
+        { id: 'conversations', label: '对话' },
+        { id: 'team', label: '团队成员' },
+      ].map((tab) => {
+        const active = selectedView === tab.id;
+
+        return (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setLeftRailView(tab.id as LeftRailView)}
+            className={`rounded-full px-3 py-2 text-sm font-medium transition ${
+              active ? 'bg-[var(--accent)] text-white shadow-[0_8px_18px_rgba(31,122,97,0.18)]' : 'text-[var(--muted)]'
+            }`}
+          >
+            {tab.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function TeamDepartmentBlock({ department }: { department: TeamDepartment }) {
+  return (
+    <div className="rounded-[24px] border border-[var(--line)] bg-white/82 p-4 shadow-[0_12px_24px_rgba(70,52,30,0.05)]">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="text-base font-semibold">{department.name}</div>
+          <div className="mt-1 text-sm text-[var(--muted)]">{department.summary}</div>
+        </div>
+        <Pill label={`${department.agents.length} 位 agent`} tone="neutral" />
+      </div>
+      <div className="mt-4 space-y-2">
+        {department.agents.map((agent) => (
+          <div
+            key={agent.id}
+            className="rounded-[18px] border border-[var(--line)] bg-[rgba(255,255,255,0.8)] px-4 py-3"
+          >
+            <div className="text-sm font-medium text-[var(--text)]">{agent.name}</div>
+            {agent.title ? <div className="mt-1 text-sm text-[var(--muted)]">{agent.title}</div> : null}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function ConversationRail({
+  leftRailView,
   threads,
   messages,
+  teamDepartments,
   pendingGroups,
 }: {
+  leftRailView: LeftRailView;
   threads: ConversationThread[];
   messages: ChatMessage[];
+  teamDepartments: TeamDepartment[];
   pendingGroups: PendingGroup[];
 }) {
   return (
     <Panel className="flex min-h-[760px] flex-col gap-4 p-4">
       <div className="flex items-center justify-between gap-3">
-        <div>
-          <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[var(--muted)]">对话</div>
-          <div className="mt-1 text-sm text-[var(--muted)]">总经理和部门都作为持续会话存在，不再拆成单独管理列表。</div>
-        </div>
-        <Pill label="聊天驱动" tone="accent" />
+        <div className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[var(--muted)]">左侧工作区</div>
+        <LeftRailTabs selectedView={leftRailView} />
       </div>
 
-      <div className="space-y-2">
-        {threads.map((thread) => (
-          <ThreadConversation
-            key={thread.id}
-            thread={thread}
-            messages={messages.filter((message) => message.threadId === thread.id)}
-            pendingGroups={pendingGroups}
-          />
-        ))}
-      </div>
+      {leftRailView === 'conversations' ? (
+        <div className="space-y-2">
+          {threads.map((thread) => (
+            <ThreadConversation
+              key={thread.id}
+              thread={thread}
+              messages={messages.filter((message) => message.threadId === thread.id)}
+              pendingGroups={pendingGroups}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {teamDepartments.map((department) => (
+            <TeamDepartmentBlock key={department.id} department={department} />
+          ))}
+        </div>
+      )}
     </Panel>
   );
 }

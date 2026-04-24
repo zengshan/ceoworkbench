@@ -1,4 +1,12 @@
-import type { CanvasCardRecord, ChatMessage, ConversationThread, PendingItem, RailItem } from './types';
+import type {
+  CanvasCardRecord,
+  ChatMessage,
+  ConversationThread,
+  PendingItem,
+  RailItem,
+  StageLayer,
+  TeamDepartment,
+} from './types';
 
 export const railItems: RailItem[] = [
   {
@@ -110,6 +118,169 @@ export const chatMessages: ChatMessage[] = [
     body: '当前等待设计方向锁定，开发未开始编码；骨架和状态管理方案已经准备好。',
     side: 'left',
     linkedCardId: 'task-2',
+  },
+];
+
+export const teamDepartments: TeamDepartment[] = [
+  {
+    id: 'dept-ceo-office',
+    name: 'CEO办公室',
+    summary: '当前真实存在的核心管理层。',
+    agents: [{ id: 'agent-manager', name: '总经理', title: '公司总经理 agent' }],
+  },
+  {
+    id: 'dept-design',
+    name: '设计部',
+    summary: '总经理已创建的设计团队成员。',
+    agents: [
+      { id: 'agent-illustration', name: '原画设计' },
+      { id: 'agent-modeling', name: '模型设计' },
+      { id: 'agent-scene', name: '场景设计' },
+    ],
+  },
+  {
+    id: 'dept-engineering',
+    name: '开发部',
+    summary: '总经理已创建的开发团队成员。',
+    agents: [
+      { id: 'agent-frontend', name: '前端开发' },
+      { id: 'agent-client', name: '客户端开发' },
+    ],
+  },
+];
+
+export const stageLayers: StageLayer[] = [
+  {
+    id: 'ceo',
+    label: 'CEO层',
+    description: 'CEO 视角下的本轮推进总览与部门汇总。',
+    cards: [
+      {
+        id: 'ceo-progress',
+        title: '本轮工作进度',
+        body: '当前这一轮工作已经完成部门协同与阶段汇总，CEO 可以直接看到设计、开发两侧的推进状态与下一步重点。',
+        owner: '总经理',
+        updatedAt: '3m ago',
+        statusLabel: '本轮汇总',
+        artifactLabels: ['工作进度', '中心舞台'],
+        position: { x: 48, y: 48, w: 640 },
+        tone: 'accent',
+      },
+      {
+        id: 'ceo-design-summary',
+        title: '设计部总结',
+        body: '设计部已完成本轮方向探索、推荐方案与 spec 归拢，当前重点是等待确认后进入定稿和交付同步。',
+        owner: '设计部',
+        updatedAt: '2m ago',
+        statusLabel: '部门总结',
+        artifactLabels: ['设计方向', 'Spec 汇总'],
+        position: { x: 736, y: 136, w: 384 },
+        rotation: -2,
+        tone: 'paper',
+      },
+      {
+        id: 'ceo-engineering-summary',
+        title: '开发部总结',
+        body: '开发部已准备好启动骨架与状态方案，当前按管理节奏维持待命，确认后即可接续设计结果进入实现。',
+        owner: '开发部',
+        updatedAt: '1m ago',
+        statusLabel: '部门总结',
+        artifactLabels: ['启动骨架', '待进入实现'],
+        position: { x: 736, y: 360, w: 384 },
+        rotation: 1,
+        tone: 'paper',
+      },
+    ],
+    connections: [
+      {
+        id: 'ceo-progress-to-design-summary',
+        from: 'ceo-progress',
+        to: 'ceo-design-summary',
+        label: '设计汇总',
+      },
+      {
+        id: 'ceo-progress-to-engineering-summary',
+        from: 'ceo-progress',
+        to: 'ceo-engineering-summary',
+        label: '开发汇总',
+      },
+    ],
+  },
+  {
+    id: 'design',
+    label: '设计部',
+    description: '设计团队内部进度与交接开发的内容。',
+    cards: [
+      {
+        id: 'design-progress',
+        title: '设计部内部进度',
+        body: '首页推荐方向、组件清单和页面级 spec 已在设计部内部对齐完成，当前只剩最终定稿前的细节核对。',
+        owner: '设计部',
+        updatedAt: '8m ago',
+        statusLabel: '内部推进',
+        artifactLabels: ['推荐方向', 'Spec 对齐'],
+        position: { x: 48, y: 48, w: 620 },
+        tone: 'paper',
+      },
+      {
+        id: 'design-feedback',
+        title: '交给开发的内容',
+        body: '一旦 CEO 确认推荐稿，设计部会把切图、交互动效说明、组件标注和页面状态说明一起交接给开发部。',
+        owner: '设计负责人',
+        updatedAt: '5m ago',
+        statusLabel: '待交接',
+        artifactLabels: ['切图资源', '交互标注'],
+        position: { x: 724, y: 152, w: 396 },
+        rotation: 1,
+        tone: 'accent',
+      },
+    ],
+    connections: [
+      {
+        id: 'design-progress-to-feedback',
+        from: 'design-progress',
+        to: 'design-feedback',
+        label: '等待定稿',
+      },
+    ],
+  },
+  {
+    id: 'engineering',
+    label: '开发部',
+    description: '开发团队内部进度与当前阻塞依赖。',
+    cards: [
+      {
+        id: 'engineering-progress',
+        title: '开发部内部进度',
+        body: '项目骨架、状态管理方案和关键页面容器已经在开发部内部准备完成，收到最终设计后即可直接进入实现。',
+        owner: '开发部',
+        updatedAt: '4m ago',
+        statusLabel: '内部推进',
+        artifactLabels: ['项目骨架', '状态方案'],
+        position: { x: 48, y: 48, w: 620 },
+        tone: 'paper',
+      },
+      {
+        id: 'engineering-blocker',
+        title: '等待设计最终确认',
+        body: '视觉稿、交互动效和页面状态说明还要等设计部最终确认后才能冻结，所以开发当前只能等待这一外部依赖。',
+        owner: '前端负责人',
+        updatedAt: '1m ago',
+        statusLabel: '阻塞',
+        artifactLabels: ['等待设计确认'],
+        position: { x: 732, y: 128, w: 388 },
+        rotation: -1,
+        tone: 'warning',
+      },
+    ],
+    connections: [
+      {
+        id: 'engineering-progress-to-blocker',
+        from: 'engineering-progress',
+        to: 'engineering-blocker',
+        label: '受设计影响',
+      },
+    ],
   },
 ];
 

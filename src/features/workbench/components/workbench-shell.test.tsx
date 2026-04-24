@@ -6,7 +6,9 @@ import { WorkbenchShell } from './workbench-shell';
 
 describe('WorkbenchShell', () => {
   beforeEach(() => {
+    useWorkbenchStore.setState(useWorkbenchStore.getInitialState(), true);
     useWorkbenchStore.setState({
+      leftRailView: 'conversations',
       selectedThreadId: 'thread-manager',
       selectedCardId: 'approval-1',
     });
@@ -62,26 +64,107 @@ describe('WorkbenchShell', () => {
     expect(managerButton).toHaveAttribute('aria-expanded', 'false');
   });
 
-  it('shows department progress and blockers directly on the board', () => {
+  it('shows stage layer controls instead of the old flow board', () => {
     render(<WorkbenchShell />);
 
-    expect(screen.getAllByText('公司大战略')[0]).toBeInTheDocument();
-    expect(screen.getAllByText('部门运行态')[0]).toBeInTheDocument();
-    expect(screen.getAllByText('开发部当前卡点')[0]).toBeInTheDocument();
-    expect(screen.getAllByText('等待设计确认')[0]).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'CEO层' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '设计部' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '开发部' })).toBeInTheDocument();
+    expect(screen.queryByRole('application')).not.toBeInTheDocument();
+    expect(screen.queryByText('公司大战略')).not.toBeInTheDocument();
+    expect(screen.queryByText('部门运行态')).not.toBeInTheDocument();
     expect(screen.queryByText('待处理事项')).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: '新项目' })).not.toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: /切换公司/ })[0]).toBeInTheDocument();
   });
 
-  it('shows pending item impact when the approval card is selected', async () => {
+  it('shows CEO层 by default', () => {
+    expect(useWorkbenchStore.getState().activeStageLayerId).toBe('ceo');
+    expect(useWorkbenchStore.getState().selectedStageCardId).toBe('ceo-progress');
+
+    render(<WorkbenchShell />);
+
+    expect(screen.getByRole('button', { name: 'CEO层' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getAllByText('本轮工作进度')[0]).toBeInTheDocument();
+    expect(screen.getAllByText('设计部总结')[0]).toBeInTheDocument();
+    expect(screen.getAllByText('开发部总结')[0]).toBeInTheDocument();
+    expect(screen.queryByText('按层查看这轮推进，把部门汇总和关键状态放在同一个视野里。')).not.toBeInTheDocument();
+    expect(screen.queryByText('当前聚焦 · CEO层')).not.toBeInTheDocument();
+    expect(screen.queryByText('当前场景')).not.toBeInTheDocument();
+    expect(screen.queryByText('Center Stage')).not.toBeInTheDocument();
+    expect(screen.queryByText('CEO 视角下的本轮推进总览与部门汇总。')).not.toBeInTheDocument();
+    expect(screen.queryByText('公司大战略')).not.toBeInTheDocument();
+    expect(screen.queryByText('给总经理下达项目任务')).not.toBeInTheDocument();
+  });
+
+  it('switches from CEO层 to 设计部 and shows department handoff content', async () => {
     const user = userEvent.setup();
 
     render(<WorkbenchShell />);
 
-    const matches = screen.getAllByText('是否按推荐方案进入开发');
-    await user.click(matches[0]);
+    await user.click(screen.getByRole('button', { name: '设计部' }));
 
-    expect(screen.getAllByText('如果不处理，开发将暂停等待。')[0]).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '设计部' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('设计部内部进度')).toBeInTheDocument();
+    expect(screen.getByText('交给开发的内容')).toBeInTheDocument();
+    expect(screen.queryByText('本轮工作进度')).not.toBeInTheDocument();
+  });
+
+  it('switches to 开发部 and shows engineering progress plus blocker content', async () => {
+    const user = userEvent.setup();
+
+    render(<WorkbenchShell />);
+
+    await user.click(screen.getByRole('button', { name: '开发部' }));
+
+    expect(screen.getByRole('button', { name: '开发部' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('开发部内部进度')).toBeInTheDocument();
+    expect(screen.getByText('等待设计最终确认')).toBeInTheDocument();
+    expect(screen.queryByText('设计部总结')).not.toBeInTheDocument();
+  });
+
+  it('renders as a two-column shell', () => {
+    render(<WorkbenchShell />);
+
+    expect(screen.getByTestId('workbench-shell-grid')).toHaveClass('xl:grid-cols-[320px_minmax(0,1fr)]');
+    expect(screen.queryByText('立即动作')).not.toBeInTheDocument();
+    expect(screen.queryByText('同步给总经理')).not.toBeInTheDocument();
+  });
+
+  it('keeps stage-card selection in the center stage without the old drawer', async () => {
+    const user = userEvent.setup();
+
+    render(<WorkbenchShell />);
+
+    const designSummaryCard = screen.getByRole('button', { name: '设计部总结' });
+
+    await user.click(designSummaryCard);
+
+    expect(designSummaryCard).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getAllByText('设计部')[0]).toBeInTheDocument();
+    expect(screen.queryByText('待处理上下文')).not.toBeInTheDocument();
+    expect(screen.queryByText('按方案 B 推进，返工风险最低。')).not.toBeInTheDocument();
+    expect(screen.queryByText('如果不处理，开发将暂停等待。')).not.toBeInTheDocument();
+  });
+
+  it('switches the left rail from conversations to team members', async () => {
+    const user = userEvent.setup();
+
+    render(<WorkbenchShell />);
+
+    await user.click(screen.getByRole('button', { name: '团队成员' }));
+
+    expect(screen.getByText('CEO办公室')).toBeInTheDocument();
+    expect(screen.getAllByText('总经理')[0]).toBeInTheDocument();
+    expect(screen.getAllByText('设计部')[0]).toBeInTheDocument();
+    expect(screen.getAllByText('开发部')[0]).toBeInTheDocument();
+    expect(screen.getByText('原画设计')).toBeInTheDocument();
+    expect(screen.getByText('模型设计')).toBeInTheDocument();
+    expect(screen.getByText('场景设计')).toBeInTheDocument();
+    expect(screen.getByText('前端开发')).toBeInTheDocument();
+    expect(screen.getByText('客户端开发')).toBeInTheDocument();
+    expect(screen.queryByText('当前负责事项')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'CEO层' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getAllByText('本轮工作进度')[0]).toBeInTheDocument();
   });
 });

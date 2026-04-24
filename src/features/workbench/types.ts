@@ -2,6 +2,7 @@ export type RailSectionKey = 'manager' | 'departments' | 'pending' | 'archive';
 export type ItemSeverity = 'light' | 'medium' | 'heavy';
 export type ProjectPriority = 'P0' | 'P1' | 'P2';
 export type OversightMode = 'normal' | 'watch' | 'critical';
+export type LeftRailView = 'conversations' | 'team';
 
 export type RailItem = {
   id: string;
@@ -30,6 +31,54 @@ export type ChatMessage = {
   body: string;
   side: 'left' | 'right';
   linkedCardId?: string;
+};
+
+export type TeamAgent = {
+  id: string;
+  name: string;
+  title?: string;
+};
+
+export type TeamDepartment = {
+  id: string;
+  name: string;
+  summary: string;
+  agents: TeamAgent[];
+};
+
+export type StageLayerId = 'ceo' | 'design' | 'engineering';
+export type StageCardTone = 'paper' | 'accent' | 'warning';
+
+export type StageCardRecord = {
+  id: string;
+  title: string;
+  body: string;
+  owner: string;
+  updatedAt: string;
+  statusLabel?: string;
+  artifactLabels?: string[];
+  position: {
+    x: number;
+    y: number;
+    w: number;
+  };
+  rotation?: number;
+  tone?: StageCardTone;
+};
+
+export type StageConnection = {
+  id: string;
+  from: string;
+  to: string;
+  label?: string;
+};
+
+export type StageLayer = {
+  id: StageLayerId;
+  label: string;
+  description: string;
+  cards: StageCardRecord[];
+  connections: StageConnection[];
 };
 
 export type CanvasLane = 'ceo' | 'manager' | 'design' | 'engineering' | 'decisions';

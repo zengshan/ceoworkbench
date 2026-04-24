@@ -4,12 +4,12 @@ import type {
   CanvasCardRecord,
   ChatMessage,
   ConversationThread,
-  LeftRailView,
   PendingItem,
   RailItem,
   StageFocusId,
   StageSceneRecord,
   TeamDepartment,
+  WorkspaceView,
 } from './types';
 
 export type WorkbenchState = {
@@ -20,12 +20,16 @@ export type WorkbenchState = {
   stageScene: StageSceneRecord;
   canvasCards: CanvasCardRecord[];
   pendingItems: PendingItem[];
-  leftRailView: LeftRailView;
+  workspaceOpen: boolean;
+  workspaceView: WorkspaceView;
+  lastWorkspaceThreadId: string | null;
+  workspaceUnreadCount: number;
   selectedThreadId: string | null;
   selectedCardId: string;
   activeStageFocusId: StageFocusId;
   selectedStageCardIds: Record<StageFocusId, string | null>;
-  setLeftRailView: (view: LeftRailView) => void;
+  setWorkspaceOpen: (open: boolean) => void;
+  setWorkspaceView: (view: WorkspaceView) => void;
   selectThread: (threadId: string) => void;
   selectCard: (cardId: string) => void;
   setActiveStageFocus: (focusId: StageFocusId) => void;
@@ -47,16 +51,27 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   stageScene,
   canvasCards,
   pendingItems: mockPendingItems,
-  leftRailView: 'conversations',
+  workspaceOpen: false,
+  workspaceView: 'conversations',
+  lastWorkspaceThreadId: 'thread-manager',
+  workspaceUnreadCount: conversationThreads.reduce((total, thread) => total + (thread.unreadCount ?? 0), 0),
   selectedThreadId: 'thread-manager',
   selectedCardId: 'approval-1',
   activeStageFocusId: 'ceo',
   selectedStageCardIds: initialSelectedStageCardIds,
-  setLeftRailView: (view) => set({ leftRailView: view }),
-  selectThread: (threadId) =>
+  setWorkspaceOpen: (open) =>
     set((state) => ({
-      selectedThreadId: state.selectedThreadId === threadId ? null : threadId,
+      workspaceOpen: open,
+      selectedThreadId: open
+        ? state.lastWorkspaceThreadId ?? state.selectedThreadId ?? state.conversationThreads[0]?.id ?? null
+        : state.selectedThreadId,
     })),
+  setWorkspaceView: (view) => set({ workspaceView: view }),
+  selectThread: (threadId) =>
+    set({
+      selectedThreadId: threadId,
+      lastWorkspaceThreadId: threadId,
+    }),
   selectCard: (cardId) => set({ selectedCardId: cardId }),
   setActiveStageFocus: (focusId) =>
     set((state) => ({

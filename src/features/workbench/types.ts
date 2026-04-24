@@ -2,7 +2,13 @@ export type RailSectionKey = 'manager' | 'departments' | 'pending' | 'archive';
 export type ItemSeverity = 'light' | 'medium' | 'heavy';
 export type ProjectPriority = 'P0' | 'P1' | 'P2';
 export type OversightMode = 'normal' | 'watch' | 'critical';
-export type LeftRailView = 'conversations' | 'team';
+export type WorkspaceView = 'conversations' | 'team';
+export type LeftRailView = WorkspaceView;
+
+export type WorkspaceUnreadBadge = {
+  count: number;
+  hasAttention: boolean;
+};
 
 export type RailItem = {
   id: string;

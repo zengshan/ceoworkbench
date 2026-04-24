@@ -37,8 +37,10 @@ describe('WorkbenchShell', () => {
   beforeEach(() => {
     useWorkbenchStore.setState(useWorkbenchStore.getInitialState(), true);
     useWorkbenchStore.setState({
-      leftRailView: 'conversations',
+      workspaceOpen: false,
+      workspaceView: 'conversations',
       selectedThreadId: 'thread-manager',
+      lastWorkspaceThreadId: 'thread-manager',
       selectedCardId: 'approval-1',
     });
   });
@@ -47,65 +49,19 @@ describe('WorkbenchShell', () => {
     cleanup();
   });
 
-  it('shows chat-driven manager and department conversations', async () => {
-    const user = userEvent.setup();
-
+  it('renders the stage as the primary default surface without the old left rail', () => {
     render(<WorkbenchShell />);
 
-    expect(screen.getAllByText('CEO 和总经理的聊天')[0]).toBeInTheDocument();
-    expect(screen.getByText('直接在这里给总经理下达任务或批示。')).toBeInTheDocument();
-
-    await user.click(screen.getAllByRole('button', { name: /CEO 和设计部的聊天/ })[0]);
-
-    expect(screen.getByText('直接在这里继续和部门群沟通。')).toBeInTheDocument();
-    expect(screen.getByText('我们已经提交 3 套首页方向，并补完了 spec，当前等待你或总经理确认推荐稿。')).toBeInTheDocument();
-    expect(screen.getAllByText('CEO 和设计部的聊天')[0]).toBeInTheDocument();
+    expect(screen.getByTestId('workbench-shell-grid')).toHaveClass('grid-cols-1');
+    expect(screen.queryByText('左侧工作区')).not.toBeInTheDocument();
+    expect(screen.getByTestId('workspace-fab')).toBeInTheDocument();
   });
 
-  it('expands the clicked conversation inline before the next thread', async () => {
-    const user = userEvent.setup();
-
+  it('shows config and workspace floating controls in default stage mode', () => {
     render(<WorkbenchShell />);
 
-    await user.click(screen.getAllByRole('button', { name: /CEO 和设计部的聊天/ })[0]);
-
-    const designThread = screen.getByTestId('thread-card-thread-design');
-    const engineeringThread = screen.getByTestId('thread-card-thread-engineering');
-    const inlineComposer = within(designThread).getByText('直接在这里继续和部门群沟通。');
-
-    expect(inlineComposer).toBeInTheDocument();
-    expect(inlineComposer.compareDocumentPosition(engineeringThread) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  });
-
-  it('collapses the active manager conversation when clicked again', async () => {
-    const user = userEvent.setup();
-
-    render(<WorkbenchShell />);
-
-    const managerThread = screen.getByTestId('thread-card-thread-manager');
-    const managerButton = screen.getAllByRole('button', { name: /CEO 和总经理的聊天/ })[0];
-
-    expect(within(managerThread).getByText('直接在这里给总经理下达任务或批示。')).toBeInTheDocument();
-
-    await user.click(managerButton);
-
-    expect(within(managerThread).queryByText('直接在这里给总经理下达任务或批示。')).not.toBeInTheDocument();
-    expect(managerButton).toHaveAttribute('aria-expanded', 'false');
-  });
-
-  it('shows stage layer controls instead of the old flow board', () => {
-    render(<WorkbenchShell />);
-
-    expect(screen.getByRole('button', { name: 'CEO层' })).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: 'Office' })[0]).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: '设计部' })[0]).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: '开发部' })[0]).toBeInTheDocument();
-    expect(screen.queryByRole('application')).not.toBeInTheDocument();
-    expect(screen.queryByText('公司大战略')).not.toBeInTheDocument();
-    expect(screen.queryByText('部门运行态')).not.toBeInTheDocument();
-    expect(screen.queryByText('待处理事项')).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: '新项目' })).not.toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: /切换公司/ })[0]).toBeInTheDocument();
+    expect(screen.getByTestId('workspace-fab')).toBeInTheDocument();
+    expect(screen.getByTestId('config-fab')).toBeInTheDocument();
   });
 
   it('shows CEO层 by default', () => {
@@ -119,16 +75,112 @@ describe('WorkbenchShell', () => {
     expect(screen.getAllByText('当前判断')[0]).toBeInTheDocument();
     expect(screen.getAllByText('设计部内部进度')[0]).toBeInTheDocument();
     expect(screen.getAllByText('开发部内部进度')[0]).toBeInTheDocument();
-    expect(screen.queryByText('按层查看这轮推进，把部门汇总和关键状态放在同一个视野里。')).not.toBeInTheDocument();
-    expect(screen.queryByText('当前聚焦 · CEO层')).not.toBeInTheDocument();
-    expect(screen.queryByText('当前场景')).not.toBeInTheDocument();
-    expect(screen.queryByText('Center Stage')).not.toBeInTheDocument();
-    expect(screen.queryByText('CEO 视角下的本轮推进总览与部门汇总。')).not.toBeInTheDocument();
-    expect(screen.queryByText('公司大战略')).not.toBeInTheDocument();
     expect(screen.queryByText('给总经理下达项目任务')).not.toBeInTheDocument();
   });
 
-  it('switches from CEO层 to 设计部 and shows department handoff content', async () => {
+  it('opens a centered workspace overlay and hides config', async () => {
+    const user = userEvent.setup();
+
+    render(<WorkbenchShell />);
+    await user.click(screen.getByTestId('workspace-fab'));
+
+    expect(screen.getByTestId('workspace-overlay')).toBeInTheDocument();
+    expect(screen.getByTestId('workspace-backdrop')).toBeInTheDocument();
+    expect(screen.queryByTestId('config-fab')).not.toBeInTheDocument();
+    expect(screen.getByTestId('stage-shell')).toHaveClass('blur-[8px]');
+  });
+
+  it('closes the workspace overlay via backdrop and escape', async () => {
+    const user = userEvent.setup();
+
+    render(<WorkbenchShell />);
+    await user.click(screen.getByTestId('workspace-fab'));
+    await user.click(screen.getByTestId('workspace-backdrop'));
+
+    expect(screen.queryByTestId('workspace-overlay')).not.toBeInTheDocument();
+
+    await user.click(screen.getByTestId('workspace-fab'));
+    await user.keyboard('{Escape}');
+
+    expect(screen.queryByTestId('workspace-overlay')).not.toBeInTheDocument();
+  });
+
+  it('closes the workspace overlay via the trigger and close button', async () => {
+    const user = userEvent.setup();
+
+    render(<WorkbenchShell />);
+    await user.click(screen.getByTestId('workspace-fab'));
+    await user.click(screen.getByRole('button', { name: '关闭工作区' }));
+
+    expect(screen.queryByTestId('workspace-overlay')).not.toBeInTheDocument();
+
+    await user.click(screen.getByTestId('workspace-fab'));
+    await user.click(screen.getByTestId('workspace-fab'));
+
+    expect(screen.queryByTestId('workspace-overlay')).not.toBeInTheDocument();
+  });
+
+  it('switches the workspace sidebar between conversations and team members', async () => {
+    const user = userEvent.setup();
+
+    render(<WorkbenchShell />);
+    await user.click(screen.getByTestId('workspace-fab'));
+    await user.click(screen.getByRole('button', { name: '团队成员' }));
+
+    expect(screen.getAllByText('Office')[0]).toBeInTheDocument();
+    expect(screen.getByText('原画设计')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '对话' }));
+    expect(screen.getByTestId('workspace-title')).toHaveTextContent('CEO 和总经理的聊天');
+  });
+
+  it('keeps the selected conversation while switching sidebar tabs', async () => {
+    const user = userEvent.setup();
+
+    render(<WorkbenchShell />);
+    await user.click(screen.getByTestId('workspace-fab'));
+    await user.click(screen.getByRole('button', { name: /CEO 和设计部的聊天/ }));
+    await user.click(screen.getByRole('button', { name: '团队成员' }));
+    await user.click(screen.getByRole('button', { name: '对话' }));
+
+    expect(screen.getByTestId('workspace-title')).toHaveTextContent('CEO 和设计部的聊天');
+  });
+
+  it('restores the last-opened thread when reopening the workspace', async () => {
+    const user = userEvent.setup();
+
+    render(<WorkbenchShell />);
+    await user.click(screen.getByTestId('workspace-fab'));
+    await user.click(screen.getByRole('button', { name: /CEO 和开发部的聊天/ }));
+    await user.click(screen.getByTestId('workspace-backdrop'));
+    await user.click(screen.getByTestId('workspace-fab'));
+
+    expect(screen.getByTestId('workspace-title')).toHaveTextContent('CEO 和开发部的聊天');
+  });
+
+  it('renders a clean workspace conversation header without status pills', async () => {
+    const user = userEvent.setup();
+
+    render(<WorkbenchShell />);
+    await user.click(screen.getByTestId('workspace-fab'));
+    const overlay = screen.getByTestId('workspace-overlay');
+
+    expect(screen.getByTestId('workspace-title')).toHaveTextContent('CEO 和总经理的聊天');
+    expect(within(overlay).queryByText('2 项待确认')).not.toBeInTheDocument();
+    expect(within(overlay).queryByText('阻塞')).not.toBeInTheDocument();
+  });
+
+  it('shows a dedicated input bar at the bottom of the conversation pane', async () => {
+    const user = userEvent.setup();
+
+    render(<WorkbenchShell />);
+    await user.click(screen.getByTestId('workspace-fab'));
+
+    expect(screen.getByTestId('workspace-input')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('继续给总经理或部门下达任务...')).toBeInTheDocument();
+  });
+
+  it('moves focus to 设计部 while keeping CEO visible', async () => {
     const user = userEvent.setup();
 
     render(<WorkbenchShell />);
@@ -143,18 +195,6 @@ describe('WorkbenchShell', () => {
     expect(screen.getByTestId('cluster-ceo')).toHaveAttribute('data-mode', 'compressed');
   });
 
-  it('keeps CEO at the center while surrounding departments stay visible', () => {
-    render(<WorkbenchShell />);
-
-    expect(screen.getByRole('button', { name: 'CEO层' })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByText('本轮工作进度')).toBeInTheDocument();
-    expect(screen.getAllByText('Office')[0]).toBeInTheDocument();
-    expect(screen.getAllByText('设计部')[0]).toBeInTheDocument();
-    expect(screen.getAllByText('开发部')[0]).toBeInTheDocument();
-    expect(screen.getAllByText('设计部内部进度')[0]).toBeInTheDocument();
-    expect(screen.getAllByText('开发部内部进度')[0]).toBeInTheDocument();
-  });
-
   it('emphasizes the active focus cluster while dimming background clusters', async () => {
     const user = userEvent.setup();
 
@@ -166,21 +206,6 @@ describe('WorkbenchShell', () => {
     expect(screen.getByTestId('cluster-ceo')).toHaveAttribute('data-focus-state', 'background');
     expect(screen.getByTestId('cluster-design')).toHaveAttribute('data-focus-state', 'background');
     expect(screen.getByTestId('cluster-engineering')).toHaveAttribute('data-focus-state', 'background');
-  });
-
-  it('switches to 开发部 and shows engineering progress plus blocker content', async () => {
-    const user = userEvent.setup();
-
-    render(<WorkbenchShell />);
-
-    await user.click(screen.getAllByRole('button', { name: '开发部' })[0]);
-
-    expect(screen.getAllByRole('button', { name: '开发部' })[0]).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByText('开发部内部进度')).toBeInTheDocument();
-    expect(screen.getByText('等待设计最终确认')).toBeInTheDocument();
-    expect(screen.getByTestId('cluster-engineering')).toHaveAttribute('data-mode', 'focused');
-    expect(screen.getByTestId('cluster-office')).toHaveAttribute('data-mode', 'compressed');
-    expect(screen.getByTestId('cluster-design')).toHaveAttribute('data-mode', 'compressed');
   });
 
   it('keeps the stage scrollable and tall enough for office focus', async () => {
@@ -252,14 +277,6 @@ describe('WorkbenchShell', () => {
     expect(sceneRoot.className).not.toContain('linear-gradient');
   });
 
-  it('renders as a two-column shell', () => {
-    render(<WorkbenchShell />);
-
-    expect(screen.getByTestId('workbench-shell-grid')).toHaveClass('xl:grid-cols-[320px_minmax(0,1fr)]');
-    expect(screen.queryByText('立即动作')).not.toBeInTheDocument();
-    expect(screen.queryByText('同步给总经理')).not.toBeInTheDocument();
-  });
-
   it('keeps stage-card selection in the center stage without the old drawer', async () => {
     const user = userEvent.setup();
 
@@ -275,26 +292,5 @@ describe('WorkbenchShell', () => {
     expect(screen.queryByText('待处理上下文')).not.toBeInTheDocument();
     expect(screen.queryByText('按方案 B 推进，返工风险最低。')).not.toBeInTheDocument();
     expect(screen.queryByText('如果不处理，开发将暂停等待。')).not.toBeInTheDocument();
-  });
-
-  it('switches the left rail from conversations to team members', async () => {
-    const user = userEvent.setup();
-
-    render(<WorkbenchShell />);
-
-    await user.click(screen.getByRole('button', { name: '团队成员' }));
-
-    expect(screen.getAllByText('Office')[0]).toBeInTheDocument();
-    expect(screen.getAllByText('总经理')[0]).toBeInTheDocument();
-    expect(screen.getAllByText('设计部')[0]).toBeInTheDocument();
-    expect(screen.getAllByText('开发部')[0]).toBeInTheDocument();
-    expect(screen.getByText('原画设计')).toBeInTheDocument();
-    expect(screen.getByText('模型设计')).toBeInTheDocument();
-    expect(screen.getByText('场景设计')).toBeInTheDocument();
-    expect(screen.getByText('前端开发')).toBeInTheDocument();
-    expect(screen.getByText('客户端开发')).toBeInTheDocument();
-    expect(screen.queryByText('当前负责事项')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'CEO层' })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getAllByText('本轮工作进度')[0]).toBeInTheDocument();
   });
 });

@@ -113,4 +113,35 @@ describe('useWorkbenchStore company wall', () => {
       }
     }
   });
+
+  it('tracks workspace overlay defaults separately from stage focus', () => {
+    const state = useWorkbenchStore.getState();
+
+    expect(state.workspaceOpen).toBe(false);
+    expect(state.workspaceView).toBe('conversations');
+    expect(state.lastWorkspaceThreadId).toBe('thread-manager');
+    expect(state.workspaceUnreadCount).toBe(2);
+    expect(state.activeStageFocusId).toBe('ceo');
+  });
+
+  it('restores the last workspace thread when reopening the overlay', () => {
+    const store = useWorkbenchStore.getState();
+
+    store.selectThread('thread-design');
+    store.setWorkspaceOpen(false);
+    store.setWorkspaceOpen(true);
+
+    expect(useWorkbenchStore.getState().selectedThreadId).toBe('thread-design');
+    expect(useWorkbenchStore.getState().lastWorkspaceThreadId).toBe('thread-design');
+  });
+
+  it('keeps the selected thread while switching workspace tabs', () => {
+    const store = useWorkbenchStore.getState();
+
+    store.selectThread('thread-engineering');
+    store.setWorkspaceView('team');
+    store.setWorkspaceView('conversations');
+
+    expect(useWorkbenchStore.getState().selectedThreadId).toBe('thread-engineering');
+  });
 });

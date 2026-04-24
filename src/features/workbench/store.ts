@@ -34,7 +34,7 @@ export type WorkbenchState = {
 
 const initialSelectedStageCardIds: Record<StageFocusId, string | null> = {
   ceo: 'ceo-progress',
-  manager: 'manager-judgment',
+  office: 'office-judgment',
   design: 'design-progress',
   engineering: 'engineering-progress',
 };

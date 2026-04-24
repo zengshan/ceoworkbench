@@ -48,7 +48,7 @@ export type TeamDepartment = {
 
 export type StageLayerId = 'ceo' | 'design' | 'engineering';
 export type StageCardTone = 'paper' | 'accent' | 'warning';
-export type StageFocusId = 'ceo' | 'manager' | 'design' | 'engineering';
+export type StageFocusId = 'ceo' | 'office' | 'design' | 'engineering';
 export type StageClusterCardSize = 'focused' | 'supporting' | 'compressed';
 
 export type StageCardRecord = {
@@ -93,6 +93,8 @@ export type StageClusterConnection = {
   id: string;
   fromClusterId: StageFocusId;
   toClusterId: StageFocusId;
+  fromCardId?: string;
+  toCardId?: string;
   label?: string;
 };
 

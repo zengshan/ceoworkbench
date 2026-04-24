@@ -25,7 +25,7 @@ test('renders the CEO-centered company wall by default', async ({ page }) => {
   await expect(managerThreadButton).toBeVisible();
   await expect(page.getByRole('button', { name: 'CEO层', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(centerStage.getByText('本轮工作进度')).toBeVisible();
-  await expect(centerStage.getByRole('button', { name: '总经理', exact: true }).first()).toBeVisible();
+  await expect(centerStage.getByRole('button', { name: 'Office', exact: true }).first()).toBeVisible();
   await expect(centerStage.getByRole('button', { name: '设计部', exact: true }).first()).toBeVisible();
   await expect(centerStage.getByRole('button', { name: '开发部', exact: true }).first()).toBeVisible();
   await expect(centerStage.getByText('设计部内部进度')).toBeVisible();
@@ -86,7 +86,7 @@ test('keeps non-focused clusters visible after moving focus to 开发部', async
   await expect(centerStage.getByText('开发部内部进度')).toBeVisible();
   await expect(centerStage.getByText('等待设计最终确认')).toBeVisible();
   await expect(page.getByTestId('cluster-engineering')).toHaveAttribute('data-mode', 'focused');
-  await expect(page.getByTestId('cluster-manager')).toHaveAttribute('data-mode', 'compressed');
+  await expect(page.getByTestId('cluster-office')).toHaveAttribute('data-mode', 'compressed');
   await expect(page.getByTestId('cluster-design')).toHaveAttribute('data-mode', 'compressed');
 });
 
@@ -99,7 +99,7 @@ test('shows the team members tab without changing the center stage', async ({ pa
   await expect(leftRail).toHaveCount(1);
   await expect(centerStage).toHaveCount(1);
   await leftRail.getByRole('button', { name: '团队成员', exact: true }).click();
-  await expect(leftRail.getByText('CEO办公室')).toBeVisible();
+  await expect(leftRail.getByText('Office')).toBeVisible();
   await expect(leftRail.getByText('总经理', { exact: true })).toBeVisible();
   await expect(leftRail.getByText('设计部', { exact: true })).toBeVisible();
   await expect(leftRail.getByText('开发部', { exact: true })).toBeVisible();

@@ -1,6 +1,25 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { useWorkbenchStore } from './store';
 
+function estimateClusterHeight(mode: 'focused' | 'supporting' | 'compressed', cards: number) {
+  const labelHeight = 40;
+  const cardHeight = mode === 'focused' ? 210 : mode === 'supporting' ? 170 : 112;
+  const gap = mode === 'focused' ? 12 : 8;
+  return labelHeight + cards * cardHeight + Math.max(0, cards - 1) * gap;
+}
+
+function overlaps(
+  first: { x: number; y: number; w: number; h: number },
+  second: { x: number; y: number; w: number; h: number },
+) {
+  return !(
+    first.x + first.w <= second.x ||
+    second.x + second.w <= first.x ||
+    first.y + first.h <= second.y ||
+    second.y + second.h <= first.y
+  );
+}
+
 describe('useWorkbenchStore company wall', () => {
   beforeEach(() => {
     useWorkbenchStore.setState(useWorkbenchStore.getInitialState(), true);
@@ -9,12 +28,12 @@ describe('useWorkbenchStore company wall', () => {
   it('defaults to the CEO focus and seeded cluster selections', () => {
     const state = useWorkbenchStore.getState();
 
-    expect(state.stageScene.focusOrder).toEqual(['ceo', 'manager', 'design', 'engineering']);
-    expect(state.stageScene.clusters.map((cluster) => cluster.id)).toEqual(['ceo', 'manager', 'design', 'engineering']);
+    expect(state.stageScene.focusOrder).toEqual(['ceo', 'office', 'design', 'engineering']);
+    expect(state.stageScene.clusters.map((cluster) => cluster.id)).toEqual(['ceo', 'office', 'design', 'engineering']);
     expect(state.activeStageFocusId).toBe('ceo');
     expect(state.selectedStageCardIds).toEqual({
       ceo: 'ceo-progress',
-      manager: 'manager-judgment',
+      office: 'office-judgment',
       design: 'design-progress',
       engineering: 'engineering-progress',
     });
@@ -23,9 +42,9 @@ describe('useWorkbenchStore company wall', () => {
   it('keeps all organization clusters in the scene while moving focus', () => {
     const state = useWorkbenchStore.getState();
 
-    expect(state.stageScene.focusOrder).toEqual(['ceo', 'manager', 'design', 'engineering']);
+    expect(state.stageScene.focusOrder).toEqual(['ceo', 'office', 'design', 'engineering']);
     expect(state.activeStageFocusId).toBe('ceo');
-    expect(state.stageScene.clusters.map((cluster) => cluster.id)).toEqual(['ceo', 'manager', 'design', 'engineering']);
+    expect(state.stageScene.clusters.map((cluster) => cluster.id)).toEqual(['ceo', 'office', 'design', 'engineering']);
 
     state.setActiveStageFocus('design');
 
@@ -52,9 +71,9 @@ describe('useWorkbenchStore company wall', () => {
   it('updates the selected stage card within a cluster directly', () => {
     const { selectStageCard } = useWorkbenchStore.getState();
 
-    selectStageCard('manager', 'manager-report');
+    selectStageCard('office', 'office-report');
 
-    expect(useWorkbenchStore.getState().selectedStageCardIds.manager).toBe('manager-report');
+    expect(useWorkbenchStore.getState().selectedStageCardIds.office).toBe('office-report');
   });
 
   it('exposes focus layouts as clear pixel values for every cluster', () => {
@@ -66,5 +85,32 @@ describe('useWorkbenchStore company wall', () => {
     expect(layouts.every((layout) => Number.isInteger(layout.y))).toBe(true);
     expect(layouts.every((layout) => Number.isInteger(layout.w))).toBe(true);
     expect(layouts.every((layout) => layout.w >= 180)).toBe(true);
+  });
+
+  it('keeps CEO-view supporting clusters visually separated', () => {
+    const { stageScene } = useWorkbenchStore.getState();
+    const supportClusters = stageScene.clusters
+      .filter((cluster) => cluster.id !== 'ceo')
+      .map((cluster) => {
+        const layout = cluster.layoutsByFocus.ceo;
+        return {
+          id: cluster.id,
+          box: {
+            x: layout.x,
+            y: layout.y,
+            w: layout.w,
+            h: estimateClusterHeight(layout.mode, cluster.cards.length),
+          },
+        };
+      });
+
+    for (let index = 0; index < supportClusters.length; index += 1) {
+      for (let nextIndex = index + 1; nextIndex < supportClusters.length; nextIndex += 1) {
+        expect(
+          overlaps(supportClusters[index].box, supportClusters[nextIndex].box),
+          `${supportClusters[index].id} overlaps ${supportClusters[nextIndex].id} in CEO view`,
+        ).toBe(false);
+      }
+    }
   });
 });

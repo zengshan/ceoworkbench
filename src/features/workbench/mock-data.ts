@@ -125,7 +125,7 @@ export const chatMessages: ChatMessage[] = [
 export const teamDepartments: TeamDepartment[] = [
   {
     id: 'dept-ceo-office',
-    name: 'CEO办公室',
+    name: 'Office',
     summary: '当前真实存在的核心管理层。',
     agents: [{ id: 'agent-manager', name: '总经理', title: '公司总经理 agent' }],
   },
@@ -286,7 +286,7 @@ export const stageLayers: StageLayer[] = [
 ];
 
 export const stageScene: StageSceneRecord = {
-  focusOrder: ['ceo', 'manager', 'design', 'engineering'],
+  focusOrder: ['ceo', 'office', 'design', 'engineering'],
   clusters: [
     {
       id: 'ceo',
@@ -313,18 +313,18 @@ export const stageScene: StageSceneRecord = {
       ],
       layoutsByFocus: {
         ceo: { x: 430, y: 150, w: 340, z: 40, mode: 'focused' },
-        manager: { x: 104, y: 92, w: 188, z: 12, mode: 'compressed' },
+        office: { x: 104, y: 92, w: 188, z: 12, mode: 'compressed' },
         design: { x: 862, y: 92, w: 188, z: 12, mode: 'compressed' },
         engineering: { x: 872, y: 408, w: 184, z: 12, mode: 'compressed' },
       },
     },
     {
-      id: 'manager',
-      label: '总经理',
-      switcherLabel: '总经理',
+      id: 'office',
+      label: 'Office',
+      switcherLabel: 'Office',
       cards: [
         {
-          id: 'manager-judgment',
+          id: 'office-judgment',
           title: '当前判断',
           body: '设计方向已经收口到推荐稿，建议你确认后就让开发直接进入实现准备。',
           owner: '总经理',
@@ -332,7 +332,7 @@ export const stageScene: StageSceneRecord = {
           statusLabel: '判断',
         },
         {
-          id: 'manager-report',
+          id: 'office-report',
           title: '当前汇报',
           body: '设计与开发都已进入待命对齐状态，关键点只剩最终方向确认与交接顺序。',
           owner: '总经理',
@@ -340,7 +340,7 @@ export const stageScene: StageSceneRecord = {
           statusLabel: '汇报',
         },
         {
-          id: 'manager-request',
+          id: 'office-request',
           title: '需要 CEO 确认',
           body: '推荐方案是否可以作为第一版直接推进，并按这个节奏发出开发启动信号。',
           owner: '总经理',
@@ -350,8 +350,8 @@ export const stageScene: StageSceneRecord = {
         },
       ],
       layoutsByFocus: {
-        ceo: { x: 132, y: 120, w: 206, z: 18, mode: 'supporting' },
-        manager: { x: 430, y: 150, w: 332, z: 40, mode: 'focused' },
+        ceo: { x: 40, y: 120, w: 180, z: 18, mode: 'supporting' },
+        office: { x: 430, y: 150, w: 332, z: 40, mode: 'focused' },
         design: { x: 100, y: 92, w: 182, z: 12, mode: 'compressed' },
         engineering: { x: 102, y: 92, w: 182, z: 12, mode: 'compressed' },
       },
@@ -388,8 +388,8 @@ export const stageScene: StageSceneRecord = {
         },
       ],
       layoutsByFocus: {
-        ceo: { x: 160, y: 418, w: 194, z: 18, mode: 'supporting' },
-        manager: { x: 842, y: 108, w: 182, z: 12, mode: 'compressed' },
+        ceo: { x: 236, y: 418, w: 186, z: 18, mode: 'supporting' },
+        office: { x: 862, y: 84, w: 182, z: 12, mode: 'compressed' },
         design: { x: 430, y: 150, w: 332, z: 40, mode: 'focused' },
         engineering: { x: 104, y: 418, w: 182, z: 12, mode: 'compressed' },
       },
@@ -427,17 +427,45 @@ export const stageScene: StageSceneRecord = {
       ],
       layoutsByFocus: {
         ceo: { x: 850, y: 120, w: 204, z: 18, mode: 'supporting' },
-        manager: { x: 838, y: 418, w: 182, z: 12, mode: 'compressed' },
+        office: { x: 862, y: 472, w: 182, z: 12, mode: 'compressed' },
         design: { x: 860, y: 420, w: 182, z: 12, mode: 'compressed' },
         engineering: { x: 430, y: 150, w: 332, z: 40, mode: 'focused' },
       },
     },
   ],
   connections: [
-    { id: 'ceo-manager', fromClusterId: 'ceo', toClusterId: 'manager', label: '汇报' },
-    { id: 'manager-design', fromClusterId: 'manager', toClusterId: 'design', label: '拆解' },
-    { id: 'design-engineering', fromClusterId: 'design', toClusterId: 'engineering', label: '交接' },
-    { id: 'engineering-ceo', fromClusterId: 'engineering', toClusterId: 'ceo', label: '回传' },
+    {
+      id: 'ceo-office',
+      fromClusterId: 'ceo',
+      toClusterId: 'office',
+      fromCardId: 'ceo-progress',
+      toCardId: 'office-report',
+      label: '汇报',
+    },
+    {
+      id: 'office-design',
+      fromClusterId: 'office',
+      toClusterId: 'design',
+      fromCardId: 'office-report',
+      toCardId: 'design-progress',
+      label: '拆解',
+    },
+    {
+      id: 'design-engineering',
+      fromClusterId: 'design',
+      toClusterId: 'engineering',
+      fromCardId: 'design-handoff',
+      toCardId: 'engineering-progress',
+      label: '交接',
+    },
+    {
+      id: 'engineering-ceo',
+      fromClusterId: 'engineering',
+      toClusterId: 'ceo',
+      fromCardId: 'engineering-next',
+      toCardId: 'ceo-direction',
+      label: '回传',
+    },
   ],
 };
 

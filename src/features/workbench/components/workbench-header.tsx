@@ -8,7 +8,7 @@ export function WorkbenchHeader() {
         <div className="text-xs uppercase tracking-[0.3em] text-[var(--muted)]">CEO 工作台</div>
         <h1 className="mt-2 text-2xl font-semibold">wanman.ai</h1>
         <p className="mt-1 max-w-2xl text-sm text-[var(--muted)]">
-          通过总经理组织设计与开发推进，让 CEO 始终看见公司当前运行态与关键决策点。
+          通过 Office 组织设计与开发推进，让 CEO 始终看见公司当前运行态与关键决策点。
         </p>
       </div>
       <div className="flex flex-wrap items-center gap-3">

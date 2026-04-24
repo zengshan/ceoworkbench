@@ -14,20 +14,22 @@ export function CanvasBoard() {
 
   if (!stageScene.clusters.length) {
     return (
-      <Panel className="min-h-[760px] p-4">
-        <div aria-hidden="true" className="h-full min-h-[728px] rounded-[24px] border border-dashed border-[var(--line)]" />
+      <Panel className="min-h-[760px] overflow-hidden">
+        <div aria-hidden="true" className="h-full min-h-[728px] border border-dashed border-[var(--line)]" />
       </Panel>
     );
   }
 
   return (
-    <Panel className="flex min-h-[760px] flex-col gap-4 p-4">
-      <StageLayerSwitcher
-        clusters={stageScene.clusters}
-        focusOrder={stageScene.focusOrder}
-        activeFocusId={activeStageFocusId}
-        onChange={setActiveStageFocus}
-      />
+    <Panel className="flex min-h-[760px] min-w-0 flex-col overflow-hidden">
+      <div className="border-b border-[rgba(74,58,39,0.08)] px-4 py-4">
+        <StageLayerSwitcher
+          clusters={stageScene.clusters}
+          focusOrder={stageScene.focusOrder}
+          activeFocusId={activeStageFocusId}
+          onChange={setActiveStageFocus}
+        />
+      </div>
       <StageScene
         scene={stageScene}
         activeFocusId={activeStageFocusId}

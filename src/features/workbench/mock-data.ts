@@ -5,6 +5,7 @@ import type {
   PendingItem,
   RailItem,
   StageLayer,
+  StageSceneRecord,
   TeamDepartment,
 } from './types';
 
@@ -283,6 +284,162 @@ export const stageLayers: StageLayer[] = [
     ],
   },
 ];
+
+export const stageScene: StageSceneRecord = {
+  focusOrder: ['ceo', 'manager', 'design', 'engineering'],
+  clusters: [
+    {
+      id: 'ceo',
+      label: 'CEO',
+      switcherLabel: 'CEO层',
+      cards: [
+        {
+          id: 'ceo-progress',
+          title: '本轮工作进度',
+          body: '总经理已经把设计与开发的节奏收拢到同一轮判断里，你现在看到的是整家公司围绕这轮推进形成的关系墙。',
+          owner: 'CEO',
+          updatedAt: '2m ago',
+          statusLabel: '中心视角',
+          tone: 'accent',
+        },
+        {
+          id: 'ceo-direction',
+          title: '当前主判断',
+          body: '先锁设计方向，再释放开发启动，避免公司继续在输入不稳定的状态里空转。',
+          owner: 'CEO',
+          updatedAt: '5m ago',
+          statusLabel: '当前判断',
+        },
+      ],
+      layoutsByFocus: {
+        ceo: { x: 430, y: 150, w: 340, z: 40, mode: 'focused' },
+        manager: { x: 104, y: 92, w: 188, z: 12, mode: 'compressed' },
+        design: { x: 862, y: 92, w: 188, z: 12, mode: 'compressed' },
+        engineering: { x: 872, y: 408, w: 184, z: 12, mode: 'compressed' },
+      },
+    },
+    {
+      id: 'manager',
+      label: '总经理',
+      switcherLabel: '总经理',
+      cards: [
+        {
+          id: 'manager-judgment',
+          title: '当前判断',
+          body: '设计方向已经收口到推荐稿，建议你确认后就让开发直接进入实现准备。',
+          owner: '总经理',
+          updatedAt: '3m ago',
+          statusLabel: '判断',
+        },
+        {
+          id: 'manager-report',
+          title: '当前汇报',
+          body: '设计与开发都已进入待命对齐状态，关键点只剩最终方向确认与交接顺序。',
+          owner: '总经理',
+          updatedAt: '4m ago',
+          statusLabel: '汇报',
+        },
+        {
+          id: 'manager-request',
+          title: '需要 CEO 确认',
+          body: '推荐方案是否可以作为第一版直接推进，并按这个节奏发出开发启动信号。',
+          owner: '总经理',
+          updatedAt: '1m ago',
+          statusLabel: '确认',
+          tone: 'warning',
+        },
+      ],
+      layoutsByFocus: {
+        ceo: { x: 132, y: 120, w: 206, z: 18, mode: 'supporting' },
+        manager: { x: 430, y: 150, w: 332, z: 40, mode: 'focused' },
+        design: { x: 100, y: 92, w: 182, z: 12, mode: 'compressed' },
+        engineering: { x: 102, y: 92, w: 182, z: 12, mode: 'compressed' },
+      },
+    },
+    {
+      id: 'design',
+      label: '设计部',
+      switcherLabel: '设计部',
+      cards: [
+        {
+          id: 'design-progress',
+          title: '设计部内部进度',
+          body: '首页方向已经收口到推荐稿，当前在补交给开发的结构说明与边界细节。',
+          owner: '设计部',
+          updatedAt: '6m ago',
+          statusLabel: '主簇',
+        },
+        {
+          id: 'design-handoff',
+          title: '交给开发的内容',
+          body: '推荐稿、页面覆盖清单与组件说明会一起交接给开发部，避免进入实现后再返工。',
+          owner: '设计部',
+          updatedAt: '4m ago',
+          statusLabel: '交接',
+          tone: 'accent',
+        },
+        {
+          id: 'design-artifact',
+          title: '设计产物状态',
+          body: '核心页面、关键组件和动效说明都已整理，只等最终定稿后一次性交接。',
+          owner: '设计负责人',
+          updatedAt: '7m ago',
+          statusLabel: '产物',
+        },
+      ],
+      layoutsByFocus: {
+        ceo: { x: 160, y: 418, w: 194, z: 18, mode: 'supporting' },
+        manager: { x: 842, y: 108, w: 182, z: 12, mode: 'compressed' },
+        design: { x: 430, y: 150, w: 332, z: 40, mode: 'focused' },
+        engineering: { x: 104, y: 418, w: 182, z: 12, mode: 'compressed' },
+      },
+    },
+    {
+      id: 'engineering',
+      label: '开发部',
+      switcherLabel: '开发部',
+      cards: [
+        {
+          id: 'engineering-progress',
+          title: '开发部内部进度',
+          body: '开发骨架与状态管理已经就位，一旦输入锁定就直接进入页面实现。',
+          owner: '开发部',
+          updatedAt: '5m ago',
+          statusLabel: '主簇',
+        },
+        {
+          id: 'engineering-blocker',
+          title: '等待设计最终确认',
+          body: '推荐稿未完全锁定前，开发仍然会保持压缩准备状态，避免错误启动。',
+          owner: '开发部',
+          updatedAt: '3m ago',
+          statusLabel: '阻塞',
+          tone: 'warning',
+        },
+        {
+          id: 'engineering-next',
+          title: '接续动作',
+          body: '收到正式交接后立即拉起实现、联调和页面状态验证，不再重复等待说明。',
+          owner: '前端负责人',
+          updatedAt: '2m ago',
+          statusLabel: '下一步',
+        },
+      ],
+      layoutsByFocus: {
+        ceo: { x: 850, y: 120, w: 204, z: 18, mode: 'supporting' },
+        manager: { x: 838, y: 418, w: 182, z: 12, mode: 'compressed' },
+        design: { x: 860, y: 420, w: 182, z: 12, mode: 'compressed' },
+        engineering: { x: 430, y: 150, w: 332, z: 40, mode: 'focused' },
+      },
+    },
+  ],
+  connections: [
+    { id: 'ceo-manager', fromClusterId: 'ceo', toClusterId: 'manager', label: '汇报' },
+    { id: 'manager-design', fromClusterId: 'manager', toClusterId: 'design', label: '拆解' },
+    { id: 'design-engineering', fromClusterId: 'design', toClusterId: 'engineering', label: '交接' },
+    { id: 'engineering-ceo', fromClusterId: 'engineering', toClusterId: 'ceo', label: '回传' },
+  ],
+};
 
 export const canvasCards: CanvasCardRecord[] = [
   {

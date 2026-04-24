@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { canvasCards, chatMessages, conversationThreads, mockPendingItems, railItems, stageLayers, teamDepartments } from './mock-data';
+import { canvasCards, chatMessages, conversationThreads, mockPendingItems, railItems, stageScene, teamDepartments } from './mock-data';
 import type {
   CanvasCardRecord,
   ChatMessage,
@@ -7,41 +7,36 @@ import type {
   LeftRailView,
   PendingItem,
   RailItem,
-  StageLayer,
-  StageLayerId,
+  StageFocusId,
+  StageSceneRecord,
   TeamDepartment,
 } from './types';
 
-const resolveStageSelection = (
-  layers: StageLayer[],
-  layerId: StageLayerId,
-): Pick<WorkbenchState, 'activeStageLayerId' | 'selectedStageCardId'> => {
-  const nextLayer = layers.find((layer) => layer.id === layerId) ?? layers[0];
-
-  return {
-    activeStageLayerId: nextLayer.id,
-    selectedStageCardId: nextLayer.cards[0]?.id ?? null,
-  };
-};
-
-type WorkbenchState = {
+export type WorkbenchState = {
   railItems: RailItem[];
   conversationThreads: ConversationThread[];
   chatMessages: ChatMessage[];
   teamDepartments: TeamDepartment[];
-  stageLayers: StageLayer[];
+  stageScene: StageSceneRecord;
   canvasCards: CanvasCardRecord[];
   pendingItems: PendingItem[];
   leftRailView: LeftRailView;
   selectedThreadId: string | null;
   selectedCardId: string;
-  activeStageLayerId: StageLayerId;
-  selectedStageCardId: string | null;
+  activeStageFocusId: StageFocusId;
+  selectedStageCardIds: Record<StageFocusId, string | null>;
   setLeftRailView: (view: LeftRailView) => void;
   selectThread: (threadId: string) => void;
   selectCard: (cardId: string) => void;
-  setActiveStageLayer: (layerId: StageLayerId) => void;
-  selectStageCard: (cardId: string | null) => void;
+  setActiveStageFocus: (focusId: StageFocusId) => void;
+  selectStageCard: (focusId: StageFocusId, cardId: string | null) => void;
+};
+
+const initialSelectedStageCardIds: Record<StageFocusId, string | null> = {
+  ceo: 'ceo-progress',
+  manager: 'manager-judgment',
+  design: 'design-progress',
+  engineering: 'engineering-progress',
 };
 
 export const useWorkbenchStore = create<WorkbenchState>((set) => ({
@@ -49,26 +44,36 @@ export const useWorkbenchStore = create<WorkbenchState>((set) => ({
   conversationThreads,
   chatMessages,
   teamDepartments,
-  stageLayers,
+  stageScene,
   canvasCards,
   pendingItems: mockPendingItems,
   leftRailView: 'conversations',
   selectedThreadId: 'thread-manager',
   selectedCardId: 'approval-1',
-  ...resolveStageSelection(stageLayers, 'ceo'),
+  activeStageFocusId: 'ceo',
+  selectedStageCardIds: initialSelectedStageCardIds,
   setLeftRailView: (view) => set({ leftRailView: view }),
   selectThread: (threadId) =>
     set((state) => ({
       selectedThreadId: state.selectedThreadId === threadId ? null : threadId,
     })),
   selectCard: (cardId) => set({ selectedCardId: cardId }),
-  setActiveStageLayer: (layerId) =>
-    set((state) => {
-      if (state.activeStageLayerId === layerId) {
-        return {};
-      }
-
-      return resolveStageSelection(state.stageLayers, layerId);
-    }),
-  selectStageCard: (cardId) => set({ selectedStageCardId: cardId }),
+  setActiveStageFocus: (focusId) =>
+    set((state) => ({
+      activeStageFocusId: focusId,
+      selectedStageCardIds: {
+        ...state.selectedStageCardIds,
+        [focusId]:
+          state.selectedStageCardIds[focusId] ??
+          state.stageScene.clusters.find((cluster) => cluster.id === focusId)?.cards[0]?.id ??
+          null,
+      },
+    })),
+  selectStageCard: (focusId, cardId) =>
+    set((state) => ({
+      selectedStageCardIds: {
+        ...state.selectedStageCardIds,
+        [focusId]: cardId,
+      },
+    })),
 }));

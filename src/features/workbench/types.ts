@@ -48,6 +48,8 @@ export type TeamDepartment = {
 
 export type StageLayerId = 'ceo' | 'design' | 'engineering';
 export type StageCardTone = 'paper' | 'accent' | 'warning';
+export type StageFocusId = 'ceo' | 'manager' | 'design' | 'engineering';
+export type StageClusterCardSize = 'focused' | 'supporting' | 'compressed';
 
 export type StageCardRecord = {
   id: string;
@@ -64,6 +66,48 @@ export type StageCardRecord = {
   };
   rotation?: number;
   tone?: StageCardTone;
+};
+
+export type StageClusterCardRecord = {
+  id: string;
+  title: string;
+  body: string;
+  owner: string;
+  updatedAt: string;
+  statusLabel?: string;
+  artifactLabels?: string[];
+  tone?: StageCardTone;
+  rotation?: number;
+  sizeHint?: StageClusterCardSize;
+};
+
+export type StageClusterLayout = {
+  x: number;
+  y: number;
+  w: number;
+  z: number;
+  mode: 'focused' | 'supporting' | 'compressed';
+};
+
+export type StageClusterConnection = {
+  id: string;
+  fromClusterId: StageFocusId;
+  toClusterId: StageFocusId;
+  label?: string;
+};
+
+export type StageCluster = {
+  id: StageFocusId;
+  label: string;
+  switcherLabel: string;
+  cards: StageClusterCardRecord[];
+  layoutsByFocus: Record<StageFocusId, StageClusterLayout>;
+};
+
+export type StageSceneRecord = {
+  focusOrder: StageFocusId[];
+  clusters: StageCluster[];
+  connections: StageClusterConnection[];
 };
 
 export type StageConnection = {

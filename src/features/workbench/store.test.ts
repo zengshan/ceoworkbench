@@ -1,83 +1,70 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { useWorkbenchStore } from './store';
 
-describe('useWorkbenchStore stage layers', () => {
+describe('useWorkbenchStore company wall', () => {
   beforeEach(() => {
     useWorkbenchStore.setState(useWorkbenchStore.getInitialState(), true);
   });
 
-  it('defaults to the CEO stage layer and first CEO card', () => {
+  it('defaults to the CEO focus and seeded cluster selections', () => {
     const state = useWorkbenchStore.getState();
-    const ceoLayer = state.stageLayers.find((layer) => layer.id === 'ceo');
 
-    expect(state.stageLayers.map((layer) => layer.label)).toEqual(['CEO层', '设计部', '开发部']);
-    expect(state.activeStageLayerId).toBe('ceo');
-    expect(state.selectedStageCardId).toBe('ceo-progress');
-    expect(ceoLayer?.cards.map((card) => `${card.id}:${card.title}`)).toEqual([
-      'ceo-progress:本轮工作进度',
-      'ceo-design-summary:设计部总结',
-      'ceo-engineering-summary:开发部总结',
-    ]);
-  });
-
-
-  it('falls back to the first layer when switching to an unknown layer id', () => {
-    const { setActiveStageLayer, stageLayers } = useWorkbenchStore.getState();
-
-    useWorkbenchStore.setState({
-      stageLayers: [stageLayers[1], stageLayers[0], stageLayers[2]],
-      activeStageLayerId: 'ceo',
-      selectedStageCardId: 'ceo-progress',
+    expect(state.stageScene.focusOrder).toEqual(['ceo', 'manager', 'design', 'engineering']);
+    expect(state.stageScene.clusters.map((cluster) => cluster.id)).toEqual(['ceo', 'manager', 'design', 'engineering']);
+    expect(state.activeStageFocusId).toBe('ceo');
+    expect(state.selectedStageCardIds).toEqual({
+      ceo: 'ceo-progress',
+      manager: 'manager-judgment',
+      design: 'design-progress',
+      engineering: 'engineering-progress',
     });
+  });
 
-    setActiveStageLayer('unknown-layer' as never);
+  it('keeps all organization clusters in the scene while moving focus', () => {
+    const state = useWorkbenchStore.getState();
+
+    expect(state.stageScene.focusOrder).toEqual(['ceo', 'manager', 'design', 'engineering']);
+    expect(state.activeStageFocusId).toBe('ceo');
+    expect(state.stageScene.clusters.map((cluster) => cluster.id)).toEqual(['ceo', 'manager', 'design', 'engineering']);
+
+    state.setActiveStageFocus('design');
+
+    const nextState = useWorkbenchStore.getState();
+    expect(nextState.activeStageFocusId).toBe('design');
+    expect(nextState.selectedStageCardIds.design).toBe('design-progress');
+    expect(nextState.selectedStageCardIds.ceo).toBe('ceo-progress');
+  });
+
+  it('preserves cluster card selection when returning to a previous focus', () => {
+    const { selectStageCard, setActiveStageFocus } = useWorkbenchStore.getState();
+
+    selectStageCard('design', 'design-handoff');
+    setActiveStageFocus('engineering');
+    setActiveStageFocus('design');
 
     const state = useWorkbenchStore.getState();
 
-    expect(state.activeStageLayerId).toBe('design');
-    expect(state.selectedStageCardId).toBe('design-progress');
+    expect(state.activeStageFocusId).toBe('design');
+    expect(state.selectedStageCardIds.design).toBe('design-handoff');
+    expect(state.selectedStageCardIds.engineering).toBe('engineering-progress');
   });
 
-  it('switches layers and selects the first card in the chosen layer', () => {
-    const { setActiveStageLayer } = useWorkbenchStore.getState();
-
-    setActiveStageLayer('design');
-
-    const state = useWorkbenchStore.getState();
-
-    expect(state.activeStageLayerId).toBe('design');
-    expect(state.selectedStageCardId).toBe('design-progress');
-  });
-
-  it('preserves the selected card when reselecting the active layer', () => {
-    const { selectStageCard, setActiveStageLayer } = useWorkbenchStore.getState();
-
-    setActiveStageLayer('design');
-    selectStageCard('design-feedback');
-    setActiveStageLayer('design');
-
-    const state = useWorkbenchStore.getState();
-
-    expect(state.activeStageLayerId).toBe('design');
-    expect(state.selectedStageCardId).toBe('design-feedback');
-  });
-
-  it('updates the selected stage card directly', () => {
+  it('updates the selected stage card within a cluster directly', () => {
     const { selectStageCard } = useWorkbenchStore.getState();
 
-    selectStageCard('ceo-design-summary');
+    selectStageCard('manager', 'manager-report');
 
-    expect(useWorkbenchStore.getState().selectedStageCardId).toBe('ceo-design-summary');
+    expect(useWorkbenchStore.getState().selectedStageCardIds.manager).toBe('manager-report');
   });
 
-  it('exposes stage card positions as clear pixel values', () => {
-    const positions = useWorkbenchStore
+  it('exposes focus layouts as clear pixel values for every cluster', () => {
+    const layouts = useWorkbenchStore
       .getState()
-      .stageLayers.flatMap((layer) => layer.cards.map((card) => card.position));
+      .stageScene.clusters.flatMap((cluster) => Object.values(cluster.layoutsByFocus));
 
-    expect(positions.every((position) => Number.isInteger(position.x))).toBe(true);
-    expect(positions.every((position) => Number.isInteger(position.y))).toBe(true);
-    expect(positions.every((position) => Number.isInteger(position.w))).toBe(true);
-    expect(positions.every((position) => position.w >= 240)).toBe(true);
+    expect(layouts.every((layout) => Number.isInteger(layout.x))).toBe(true);
+    expect(layouts.every((layout) => Number.isInteger(layout.y))).toBe(true);
+    expect(layouts.every((layout) => Number.isInteger(layout.w))).toBe(true);
+    expect(layouts.every((layout) => layout.w >= 180)).toBe(true);
   });
 });

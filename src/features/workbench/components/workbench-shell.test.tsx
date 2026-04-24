@@ -68,8 +68,9 @@ describe('WorkbenchShell', () => {
     render(<WorkbenchShell />);
 
     expect(screen.getByRole('button', { name: 'CEO层' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '设计部' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '开发部' })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: '总经理' })[0]).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: '设计部' })[0]).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: '开发部' })[0]).toBeInTheDocument();
     expect(screen.queryByRole('application')).not.toBeInTheDocument();
     expect(screen.queryByText('公司大战略')).not.toBeInTheDocument();
     expect(screen.queryByText('部门运行态')).not.toBeInTheDocument();
@@ -79,15 +80,16 @@ describe('WorkbenchShell', () => {
   });
 
   it('shows CEO层 by default', () => {
-    expect(useWorkbenchStore.getState().activeStageLayerId).toBe('ceo');
-    expect(useWorkbenchStore.getState().selectedStageCardId).toBe('ceo-progress');
+    expect(useWorkbenchStore.getState().activeStageFocusId).toBe('ceo');
+    expect(useWorkbenchStore.getState().selectedStageCardIds.ceo).toBe('ceo-progress');
 
     render(<WorkbenchShell />);
 
     expect(screen.getByRole('button', { name: 'CEO层' })).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getAllByText('本轮工作进度')[0]).toBeInTheDocument();
-    expect(screen.getAllByText('设计部总结')[0]).toBeInTheDocument();
-    expect(screen.getAllByText('开发部总结')[0]).toBeInTheDocument();
+    expect(screen.getAllByText('当前判断')[0]).toBeInTheDocument();
+    expect(screen.getAllByText('设计部内部进度')[0]).toBeInTheDocument();
+    expect(screen.getAllByText('开发部内部进度')[0]).toBeInTheDocument();
     expect(screen.queryByText('按层查看这轮推进，把部门汇总和关键状态放在同一个视野里。')).not.toBeInTheDocument();
     expect(screen.queryByText('当前聚焦 · CEO层')).not.toBeInTheDocument();
     expect(screen.queryByText('当前场景')).not.toBeInTheDocument();
@@ -102,12 +104,26 @@ describe('WorkbenchShell', () => {
 
     render(<WorkbenchShell />);
 
-    await user.click(screen.getByRole('button', { name: '设计部' }));
+    await user.click(screen.getAllByRole('button', { name: '设计部' })[0]);
 
-    expect(screen.getByRole('button', { name: '设计部' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getAllByRole('button', { name: '设计部' })[0]).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByText('设计部内部进度')).toBeInTheDocument();
     expect(screen.getByText('交给开发的内容')).toBeInTheDocument();
-    expect(screen.queryByText('本轮工作进度')).not.toBeInTheDocument();
+    expect(screen.getAllByText('本轮工作进度')[0]).toBeInTheDocument();
+    expect(screen.getByTestId('cluster-design')).toHaveAttribute('data-mode', 'focused');
+    expect(screen.getByTestId('cluster-ceo')).toHaveAttribute('data-mode', 'compressed');
+  });
+
+  it('keeps CEO at the center while surrounding departments stay visible', () => {
+    render(<WorkbenchShell />);
+
+    expect(screen.getByRole('button', { name: 'CEO层' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText('本轮工作进度')).toBeInTheDocument();
+    expect(screen.getAllByText('总经理')[0]).toBeInTheDocument();
+    expect(screen.getAllByText('设计部')[0]).toBeInTheDocument();
+    expect(screen.getAllByText('开发部')[0]).toBeInTheDocument();
+    expect(screen.getAllByText('设计部内部进度')[0]).toBeInTheDocument();
+    expect(screen.getAllByText('开发部内部进度')[0]).toBeInTheDocument();
   });
 
   it('switches to 开发部 and shows engineering progress plus blocker content', async () => {
@@ -115,12 +131,14 @@ describe('WorkbenchShell', () => {
 
     render(<WorkbenchShell />);
 
-    await user.click(screen.getByRole('button', { name: '开发部' }));
+    await user.click(screen.getAllByRole('button', { name: '开发部' })[0]);
 
-    expect(screen.getByRole('button', { name: '开发部' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getAllByRole('button', { name: '开发部' })[0]).toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByText('开发部内部进度')).toBeInTheDocument();
     expect(screen.getByText('等待设计最终确认')).toBeInTheDocument();
-    expect(screen.queryByText('设计部总结')).not.toBeInTheDocument();
+    expect(screen.getByTestId('cluster-engineering')).toHaveAttribute('data-mode', 'focused');
+    expect(screen.getByTestId('cluster-manager')).toHaveAttribute('data-mode', 'compressed');
+    expect(screen.getByTestId('cluster-design')).toHaveAttribute('data-mode', 'compressed');
   });
 
   it('renders as a two-column shell', () => {
@@ -136,12 +154,13 @@ describe('WorkbenchShell', () => {
 
     render(<WorkbenchShell />);
 
-    const designSummaryCard = screen.getByRole('button', { name: '设计部总结' });
+    const managerCluster = screen.getByTestId('cluster-manager');
+    const managerReportCard = within(managerCluster).getByRole('button', { name: '当前汇报' });
 
-    await user.click(designSummaryCard);
+    await user.click(managerReportCard);
 
-    expect(designSummaryCard).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getAllByText('设计部')[0]).toBeInTheDocument();
+    expect(managerReportCard).toHaveAttribute('aria-pressed', 'true');
+    expect(within(managerCluster).getAllByText('总经理')[0]).toBeInTheDocument();
     expect(screen.queryByText('待处理上下文')).not.toBeInTheDocument();
     expect(screen.queryByText('按方案 B 推进，返工风险最低。')).not.toBeInTheDocument();
     expect(screen.queryByText('如果不处理，开发将暂停等待。')).not.toBeInTheDocument();

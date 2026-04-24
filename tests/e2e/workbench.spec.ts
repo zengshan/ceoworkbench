@@ -12,7 +12,7 @@ const getCenterStage = (page: Page) =>
     has: page.getByRole('button', { name: 'CEO层', exact: true }),
   });
 
-test('renders the layered CEO workbench shell', async ({ page }) => {
+test('renders the CEO-centered company wall by default', async ({ page }) => {
   await page.goto('/');
 
   const shell = getWorkbenchShell(page);
@@ -25,6 +25,11 @@ test('renders the layered CEO workbench shell', async ({ page }) => {
   await expect(managerThreadButton).toBeVisible();
   await expect(page.getByRole('button', { name: 'CEO层', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(centerStage.getByText('本轮工作进度')).toBeVisible();
+  await expect(centerStage.getByRole('button', { name: '总经理', exact: true }).first()).toBeVisible();
+  await expect(centerStage.getByRole('button', { name: '设计部', exact: true }).first()).toBeVisible();
+  await expect(centerStage.getByRole('button', { name: '开发部', exact: true }).first()).toBeVisible();
+  await expect(centerStage.getByText('设计部内部进度')).toBeVisible();
+  await expect(centerStage.getByText('开发部内部进度')).toBeVisible();
   await expect(shell.getByRole('application')).toHaveCount(0);
   await expect(centerStage.getByText('公司大战略')).toHaveCount(0);
   await expect(centerStage.getByText('部门运行态')).toHaveCount(0);
@@ -55,23 +60,34 @@ test('switches and collapses conversation threads inline', async ({ page }) => {
   await expect(page.getByText('直接在这里给总经理下达任务或批示。')).toHaveCount(0);
 });
 
-test('switches stage layers', async ({ page }) => {
+test('moves focus to 设计部 while keeping CEO visible', async ({ page }) => {
   await page.goto('/');
 
   const centerStage = getCenterStage(page);
 
   await expect(centerStage).toHaveCount(1);
-  await centerStage.getByRole('button', { name: '设计部', exact: true }).click();
-  await expect(page.getByRole('button', { name: '设计部', exact: true })).toHaveAttribute('aria-pressed', 'true');
+  await centerStage.getByRole('button', { name: '设计部', exact: true }).first().click();
+  await expect(page.getByRole('button', { name: '设计部', exact: true }).first()).toHaveAttribute('aria-pressed', 'true');
   await expect(centerStage.getByText('设计部内部进度')).toBeVisible();
   await expect(centerStage.getByText('交给开发的内容')).toBeVisible();
-  await expect(centerStage.getByText('本轮工作进度')).toHaveCount(0);
+  await expect(centerStage.getByText('本轮工作进度')).toBeVisible();
+  await expect(page.getByTestId('cluster-design')).toHaveAttribute('data-mode', 'focused');
+  await expect(page.getByTestId('cluster-ceo')).toHaveAttribute('data-mode', 'compressed');
+});
 
-  await centerStage.getByRole('button', { name: '开发部', exact: true }).click();
-  await expect(page.getByRole('button', { name: '开发部', exact: true })).toHaveAttribute('aria-pressed', 'true');
+test('keeps non-focused clusters visible after moving focus to 开发部', async ({ page }) => {
+  await page.goto('/');
+
+  const centerStage = getCenterStage(page);
+
+  await expect(centerStage).toHaveCount(1);
+  await centerStage.getByRole('button', { name: '开发部', exact: true }).first().click();
+  await expect(page.getByRole('button', { name: '开发部', exact: true }).first()).toHaveAttribute('aria-pressed', 'true');
   await expect(centerStage.getByText('开发部内部进度')).toBeVisible();
   await expect(centerStage.getByText('等待设计最终确认')).toBeVisible();
-  await expect(centerStage.getByText('设计部内部进度')).toHaveCount(0);
+  await expect(page.getByTestId('cluster-engineering')).toHaveAttribute('data-mode', 'focused');
+  await expect(page.getByTestId('cluster-manager')).toHaveAttribute('data-mode', 'compressed');
+  await expect(page.getByTestId('cluster-design')).toHaveAttribute('data-mode', 'compressed');
 });
 
 test('shows the team members tab without changing the center stage', async ({ page }) => {

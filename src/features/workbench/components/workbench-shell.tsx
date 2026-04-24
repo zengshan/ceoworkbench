@@ -26,15 +26,6 @@ export function WorkbenchShell() {
           <CanvasBoard />
         </div>
       </div>
-      {!workspaceOpen ? (
-        <button
-          type="button"
-          data-testid="config-fab"
-          className="fixed bottom-6 left-6 z-30 rounded-full border border-[var(--line)] bg-white/88 px-4 py-3 text-sm text-[var(--muted)] shadow-[0_18px_40px_rgba(42,31,16,0.12)] backdrop-blur"
-        >
-          配置
-        </button>
-      ) : null}
       <WorkspaceFab
         unreadCount={workspaceUnreadCount}
         open={workspaceOpen}

@@ -312,7 +312,7 @@ export const stageScene: StageSceneRecord = {
         },
       ],
       layoutsByFocus: {
-        ceo: { x: 430, y: 150, w: 340, z: 40, mode: 'focused' },
+        ceo: { x: 486, y: 154, w: 340, z: 40, mode: 'focused' },
         office: { x: 104, y: 92, w: 188, z: 12, mode: 'compressed' },
         design: { x: 862, y: 92, w: 188, z: 12, mode: 'compressed' },
         engineering: { x: 872, y: 408, w: 184, z: 12, mode: 'compressed' },
@@ -350,7 +350,7 @@ export const stageScene: StageSceneRecord = {
         },
       ],
       layoutsByFocus: {
-        ceo: { x: 40, y: 120, w: 180, z: 18, mode: 'supporting' },
+        ceo: { x: 24, y: 98, w: 188, z: 18, mode: 'supporting' },
         office: { x: 430, y: 150, w: 332, z: 40, mode: 'focused' },
         design: { x: 100, y: 92, w: 182, z: 12, mode: 'compressed' },
         engineering: { x: 102, y: 92, w: 182, z: 12, mode: 'compressed' },
@@ -388,7 +388,7 @@ export const stageScene: StageSceneRecord = {
         },
       ],
       layoutsByFocus: {
-        ceo: { x: 236, y: 418, w: 186, z: 18, mode: 'supporting' },
+        ceo: { x: 1040, y: 98, w: 188, z: 18, mode: 'supporting' },
         office: { x: 862, y: 84, w: 182, z: 12, mode: 'compressed' },
         design: { x: 430, y: 150, w: 332, z: 40, mode: 'focused' },
         engineering: { x: 104, y: 418, w: 182, z: 12, mode: 'compressed' },
@@ -426,7 +426,7 @@ export const stageScene: StageSceneRecord = {
         },
       ],
       layoutsByFocus: {
-        ceo: { x: 850, y: 120, w: 204, z: 18, mode: 'supporting' },
+        ceo: { x: 1040, y: 492, w: 188, z: 18, mode: 'supporting' },
         office: { x: 862, y: 472, w: 182, z: 12, mode: 'compressed' },
         design: { x: 860, y: 420, w: 182, z: 12, mode: 'compressed' },
         engineering: { x: 430, y: 150, w: 332, z: 40, mode: 'focused' },

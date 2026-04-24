@@ -30,6 +30,13 @@ export function WorkbenchHeader() {
           >
             切换公司
           </button>
+          <button
+            type="button"
+            data-testid="header-config-button"
+            className="rounded-full border border-[var(--line)] bg-white px-3 py-2 text-sm font-medium text-[var(--muted)]"
+          >
+            配置
+          </button>
         </div>
       </div>
     </Panel>

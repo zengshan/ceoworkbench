@@ -31,6 +31,10 @@ export type RenderedConnector = {
 
 const LABEL_HEIGHT = 42;
 
+export function getHorizontalSceneOffset(viewportWidth: number, sceneWidth: number) {
+  return Math.max(Math.floor((viewportWidth - sceneWidth) / 2), 0);
+}
+
 export function estimateCardHeight(mode: 'focused' | 'supporting' | 'compressed', body: string, artifactCount = 0) {
   if (mode === 'compressed') {
     return 88;
@@ -58,12 +62,20 @@ export function estimateClusterHeight(
   );
 }
 
-function buildCardRects(cluster: StageCluster, layout: StageClusterLayout) {
+export function getVisibleClusterCards(cluster: StageCluster, activeFocusId: StageFocusId) {
+  if (cluster.id !== activeFocusId) {
+    return cluster.cards.slice(0, 1);
+  }
+
+  return cluster.cards;
+}
+
+function buildCardRects(cards: StageCluster['cards'], layout: StageClusterLayout) {
   const gap = layout.mode === 'focused' ? 12 : 8;
   let nextY = layout.y + LABEL_HEIGHT;
 
   return Object.fromEntries(
-    cluster.cards.map((card) => {
+    cards.map((card) => {
       const h = estimateCardHeight(layout.mode, card.body, card.artifactLabels?.length ?? 0);
       const rect: Rect = { x: layout.x, y: nextY, w: layout.w, h };
 
@@ -204,20 +216,21 @@ export function getStageSceneGeometry(scene: StageSceneRecord, activeFocusId: St
   const layouts = scene.clusters.map((cluster) => ({
     cluster,
     layout: cluster.layoutsByFocus[activeFocusId],
+    visibleCards: getVisibleClusterCards(cluster, activeFocusId),
   }));
 
   const cardRectsByCluster = Object.fromEntries(
-    layouts.map(({ cluster, layout }) => [cluster.id, buildCardRects(cluster, layout)]),
+    layouts.map(({ cluster, layout, visibleCards }) => [cluster.id, buildCardRects(visibleCards, layout)]),
   ) as Record<StageFocusId, Record<string, Rect>>;
 
   const clusterRects = Object.fromEntries(
-    layouts.map(({ cluster, layout }) => [
+    layouts.map(({ cluster, layout, visibleCards }) => [
       cluster.id,
       {
         x: layout.x,
         y: layout.y,
         w: layout.w,
-        h: estimateClusterHeight(cluster.cards, layout.mode),
+        h: estimateClusterHeight(visibleCards, layout.mode),
       },
     ]),
   ) as Record<StageFocusId, Rect>;

@@ -61,10 +61,11 @@ describe('WorkbenchShell', () => {
     render(<WorkbenchShell />);
 
     expect(screen.getByTestId('workspace-fab')).toBeInTheDocument();
-    expect(screen.getByTestId('config-fab')).toBeInTheDocument();
+    expect(screen.getByTestId('header-config-button')).toBeInTheDocument();
+    expect(screen.queryByTestId('config-fab')).not.toBeInTheDocument();
   });
 
-  it('shows CEO层 by default', () => {
+  it('shows CEO层 by default with only summary cards for supporting clusters', () => {
     expect(useWorkbenchStore.getState().activeStageFocusId).toBe('ceo');
     expect(useWorkbenchStore.getState().selectedStageCardIds.ceo).toBe('ceo-progress');
 
@@ -75,6 +76,12 @@ describe('WorkbenchShell', () => {
     expect(screen.getAllByText('当前判断')[0]).toBeInTheDocument();
     expect(screen.getAllByText('设计部内部进度')[0]).toBeInTheDocument();
     expect(screen.getAllByText('开发部内部进度')[0]).toBeInTheDocument();
+    expect(screen.queryByText('当前汇报')).not.toBeInTheDocument();
+    expect(screen.queryByText('需要 CEO 确认')).not.toBeInTheDocument();
+    expect(screen.queryByText('交给开发的内容')).not.toBeInTheDocument();
+    expect(screen.queryByText('设计产物状态')).not.toBeInTheDocument();
+    expect(screen.queryByText('等待设计最终确认')).not.toBeInTheDocument();
+    expect(screen.queryByText('接续动作')).not.toBeInTheDocument();
     expect(screen.queryByText('给总经理下达项目任务')).not.toBeInTheDocument();
   });
 
@@ -87,6 +94,7 @@ describe('WorkbenchShell', () => {
     expect(screen.getByTestId('workspace-overlay')).toBeInTheDocument();
     expect(screen.getByTestId('workspace-backdrop')).toBeInTheDocument();
     expect(screen.queryByTestId('config-fab')).not.toBeInTheDocument();
+    expect(screen.getByTestId('header-config-button')).toBeInTheDocument();
     expect(screen.getByTestId('stage-shell')).toHaveClass('blur-[8px]');
   });
 
@@ -191,6 +199,9 @@ describe('WorkbenchShell', () => {
     expect(screen.getByText('设计部内部进度')).toBeInTheDocument();
     expect(screen.getByText('交给开发的内容')).toBeInTheDocument();
     expect(screen.getAllByText('本轮工作进度')[0]).toBeInTheDocument();
+    expect(screen.queryByText('当前主判断')).not.toBeInTheDocument();
+    expect(screen.queryByText('当前汇报')).not.toBeInTheDocument();
+    expect(screen.queryByText('等待设计最终确认')).not.toBeInTheDocument();
     expect(screen.getByTestId('cluster-design')).toHaveAttribute('data-mode', 'focused');
     expect(screen.getByTestId('cluster-ceo')).toHaveAttribute('data-mode', 'compressed');
   });
@@ -283,11 +294,11 @@ describe('WorkbenchShell', () => {
     render(<WorkbenchShell />);
 
     const officeCluster = screen.getByTestId('cluster-office');
-    const officeReportCard = within(officeCluster).getByRole('button', { name: '当前汇报' });
+    const officeSummaryCard = within(officeCluster).getByRole('button', { name: '当前判断' });
 
-    await user.click(officeReportCard);
+    await user.click(officeSummaryCard);
 
-    expect(officeReportCard).toHaveAttribute('aria-pressed', 'true');
+    expect(officeSummaryCard).toHaveAttribute('aria-pressed', 'true');
     expect(within(officeCluster).getAllByText('Office')[0]).toBeInTheDocument();
     expect(screen.queryByText('待处理上下文')).not.toBeInTheDocument();
     expect(screen.queryByText('按方案 B 推进，返工风险最低。')).not.toBeInTheDocument();

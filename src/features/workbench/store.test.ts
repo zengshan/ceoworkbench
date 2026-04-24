@@ -1,12 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
+import { estimateClusterHeight, getVisibleClusterCards } from './stage-geometry';
 import { useWorkbenchStore } from './store';
-
-function estimateClusterHeight(mode: 'focused' | 'supporting' | 'compressed', cards: number) {
-  const labelHeight = 40;
-  const cardHeight = mode === 'focused' ? 210 : mode === 'supporting' ? 170 : 112;
-  const gap = mode === 'focused' ? 12 : 8;
-  return labelHeight + cards * cardHeight + Math.max(0, cards - 1) * gap;
-}
 
 function overlaps(
   first: { x: number; y: number; w: number; h: number },
@@ -93,13 +87,14 @@ describe('useWorkbenchStore company wall', () => {
       .filter((cluster) => cluster.id !== 'ceo')
       .map((cluster) => {
         const layout = cluster.layoutsByFocus.ceo;
+        const visibleCards = getVisibleClusterCards(cluster, 'ceo');
         return {
           id: cluster.id,
           box: {
             x: layout.x,
             y: layout.y,
             w: layout.w,
-            h: estimateClusterHeight(layout.mode, cluster.cards.length),
+            h: estimateClusterHeight(visibleCards, layout.mode),
           },
         };
       });

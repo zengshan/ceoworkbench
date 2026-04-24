@@ -6,6 +6,7 @@ import { StageCard } from './stage-card';
 
 type StageClusterProps = {
   cluster: StageClusterRecord;
+  cards: StageClusterRecord['cards'];
   layout: StageClusterLayout;
   focusState: 'active' | 'background';
   selectedCardId: string | null;
@@ -13,7 +14,7 @@ type StageClusterProps = {
   onSelectCard: (clusterId: StageFocusId, cardId: string) => void;
 };
 
-export function StageCluster({ cluster, layout, focusState, selectedCardId, onFocus, onSelectCard }: StageClusterProps) {
+export function StageCluster({ cluster, cards, layout, focusState, selectedCardId, onFocus, onSelectCard }: StageClusterProps) {
   return (
     <div
       className={clsx(
@@ -47,7 +48,7 @@ export function StageCluster({ cluster, layout, focusState, selectedCardId, onFo
           focusState === 'background' && 'opacity-60 saturate-[0.76] [filter:grayscale(0.16)]',
         )}
       >
-        {cluster.cards.map((card) => (
+        {cards.map((card) => (
           <StageCard
             key={card.id}
             card={card}

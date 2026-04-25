@@ -2,6 +2,23 @@
 
 This guide covers the current CLI-first runtime experience.
 
+## Full local experience
+
+Use these commands when you want persistent reports after a demo run:
+
+```bash
+./scripts/setup-agent-sandbox.sh
+./scripts/start-local-runtime.sh
+./scripts/run-sandbox-demo.sh
+./scripts/watch-report.sh
+```
+
+Clean all local runtime state:
+
+```bash
+./scripts/clean-local-runtime.sh
+```
+
 ## Default deterministic demo
 
 The default mode does not require Podman or an API key. It uses the fake manager adapter and exercises the same storage, supervisor, event, artifact, and report flow.

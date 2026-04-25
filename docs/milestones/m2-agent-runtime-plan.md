@@ -351,6 +351,17 @@ Sandbox profile should support:
 
 Do not expose Podman socket to agents.
 
+Default sandbox behavior:
+
+- `--rm`
+- `--userns keep-id`
+- `--network none`
+- `--read-only`
+- `/workspace` mounted from the company workspace
+- `/home/agent` mounted from the per-run home directory
+- CPU, memory, pids, and timeout limits enabled by default
+- no Docker or Podman socket mount
+
 ### Verification
 
 Initial tests can validate command construction without running Podman. Add optional local integration test when Podman is available.

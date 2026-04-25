@@ -65,7 +65,7 @@ cat "$tmpdir/result.json"
 Podman is required for the full sandbox path.
 
 ```bash
-podman build -f Containerfile.agent -t ceoworkbench-agent:latest .
+./scripts/setup-agent-sandbox.sh
 ```
 
 ## Run through Podman sandbox
@@ -73,16 +73,7 @@ podman build -f Containerfile.agent -t ceoworkbench-agent:latest .
 Use sandbox-json mode to force the CLI to execute the agent runner in Podman.
 
 ```bash
-export CEOWORKBENCH_AGENT_ADAPTER=sandbox-json
-export CEOWORKBENCH_AGENT_IMAGE=ceoworkbench-agent:latest
-export CEOWORKBENCH_SANDBOX_ROOT="$PWD/.ceoworkbench/sandbox"
-
-npm run ceoworkbench -- company create novel --goal "完成一部 12 万字科幻小说出版包"
-npm run ceoworkbench -- agent create manager --role manager
-npm run ceoworkbench -- send manager "请拆解小说出版项目"
-npm run ceoworkbench -- start --once
-npm run ceoworkbench -- watch
-npm run ceoworkbench -- report --artifacts
+./scripts/run-sandbox-demo.sh
 ```
 
 The per-run files are written under:

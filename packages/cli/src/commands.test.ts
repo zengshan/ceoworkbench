@@ -1,4 +1,8 @@
+import { mkdtemp, readFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import type { SandboxRunInput, SandboxRuntime } from '../../sandbox-podman/src';
 import { createCliRuntime, runCli } from './commands';
 
 describe('ceoworkbench CLI commands', () => {
@@ -53,5 +57,42 @@ describe('ceoworkbench CLI commands', () => {
 
     expect(output).toBe('Processed 2 runs.');
     expect(runs.filter((run) => run.status === 'completed')).toHaveLength(2);
+  });
+
+  it('can run the CLI through the sandbox-json adapter protocol', async () => {
+    const sandboxRoot = await mkdtemp(path.join(tmpdir(), 'ceoworkbench-sandbox-'));
+    const inputs: SandboxRunInput[] = [];
+    const sandboxRuntime: SandboxRuntime = {
+      async run(input) {
+        inputs.push(input);
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({ events: [] }),
+          stderr: '',
+          timedOut: false,
+        };
+      },
+    };
+    const runtime = createCliRuntime(undefined, {
+      env: {
+        CEOWORKBENCH_AGENT_ADAPTER: 'sandbox-json',
+        CEOWORKBENCH_SANDBOX_ROOT: sandboxRoot,
+      },
+      sandboxRuntime,
+    });
+
+    await runCli(['company', 'create', 'novel', '--goal', 'Publish a novel'], runtime);
+    await runCli(['agent', 'create', 'manager', '--role', 'manager'], runtime);
+    await runCli(['send', 'manager', '请拆解小说出版项目'], runtime);
+    await runCli(['start', '--once'], runtime);
+
+    const contextPath = path.join(sandboxRoot, 'company-000001', 'runs', 'run-000005', 'home', 'context.json');
+    const context = JSON.parse(await readFile(contextPath, 'utf8'));
+
+    expect(inputs[0].command).toEqual(['node', '/runner/agent.js', '/home/agent/context.json', '/home/agent/result.json']);
+    expect(inputs[0].profile.network).toBe('none');
+    expect(inputs[0].profile.homeMount.hostPath).toBe(path.dirname(contextPath));
+    expect(context.run.id).toBe('run-000005');
+    expect(context.messages[0].content).toBe('请拆解小说出版项目');
   });
 });

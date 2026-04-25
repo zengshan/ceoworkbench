@@ -1,3 +1,5 @@
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import {
   RandomIdGenerator,
   SequentialIdGenerator,
@@ -12,10 +14,16 @@ import {
   type MessageKind,
 } from '../../core/src';
 import { buildArtifactReport, buildDecisionReport, buildRunSummaryReport, buildStatusReport, renderMarkdownReport, renderTerminalReport } from '../../reporter/src';
-import { FakeManagerAdapter } from '../../runtime/src';
+import { FakeManagerAdapter, SandboxedJsonAgentAdapter, type AgentAdapter, type AgentContext } from '../../runtime/src';
+import { PodmanSandboxRuntime, defaultSandboxProfile, type SandboxRuntime } from '../../sandbox-podman/src';
 import { Supervisor } from '../../supervisor/src';
 import { MemoryStorage, type Storage } from '../../storage/src';
 import { PostgresStorage } from '../../storage-postgres/src';
+
+export type CliRuntimeOptions = {
+  env?: NodeJS.ProcessEnv | Record<string, string | undefined>;
+  sandboxRuntime?: SandboxRuntime;
+};
 
 export type CliRuntime = {
   storage: RuntimeStorage;
@@ -30,23 +38,24 @@ export type RuntimeStorage = Storage & {
   close?: () => Promise<void>;
 };
 
-export function createCliRuntime(storage: RuntimeStorage = createDefaultStorage()): CliRuntime {
+export function createCliRuntime(storage?: RuntimeStorage, options: CliRuntimeOptions = {}): CliRuntime {
+  const runtimeStorage = storage ?? createDefaultStorage(options.env);
   const clock = new SystemClock();
-  const ids = storage instanceof MemoryStorage ? new SequentialIdGenerator() : new RandomIdGenerator();
+  const ids = runtimeStorage instanceof MemoryStorage ? new SequentialIdGenerator() : new RandomIdGenerator();
   const supervisor = new Supervisor({
-    storage,
+    storage: runtimeStorage,
     clock,
     ids,
-    adapter: new FakeManagerAdapter(),
+    adapter: createAgentAdapter(options),
     leaseOwner: 'cli-worker',
   });
 
   return {
-    storage,
+    storage: runtimeStorage,
     clock,
     ids,
     supervisor,
-    close: storage.close ? () => storage.close!() : undefined,
+    close: runtimeStorage.close ? () => runtimeStorage.close!() : undefined,
   };
 }
 
@@ -260,14 +269,89 @@ function help() {
   ].join('\n');
 }
 
-function createDefaultStorage(): RuntimeStorage {
-  const connectionString = process.env.CEOWORKBENCH_DATABASE_URL ?? process.env.DATABASE_URL;
+function createDefaultStorage(env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env): RuntimeStorage {
+  const connectionString = env.CEOWORKBENCH_DATABASE_URL ?? env.DATABASE_URL;
 
   if (connectionString) {
     return new PostgresStorage({ connectionString });
   }
 
   return new MemoryStorage();
+}
+
+function createAgentAdapter(options: CliRuntimeOptions): AgentAdapter {
+  const env = options.env ?? process.env;
+
+  if (env.CEOWORKBENCH_AGENT_ADAPTER !== 'sandbox-json') {
+    return new FakeManagerAdapter();
+  }
+
+  const sandboxRoot = env.CEOWORKBENCH_SANDBOX_ROOT ?? path.join(process.cwd(), '.ceoworkbench', 'sandbox');
+  const image = env.CEOWORKBENCH_AGENT_IMAGE ?? 'ceoworkbench-agent:latest';
+  const commandTemplate = splitCommand(env.CEOWORKBENCH_AGENT_COMMAND ?? 'node /runner/agent.js');
+
+  return new SandboxedJsonAgentAdapter({
+    runtime: options.sandboxRuntime ?? new PodmanSandboxRuntime(),
+    contextPathsForContext: (context) => {
+      const paths = buildSandboxPaths(sandboxRoot, context);
+
+      return {
+        hostPath: path.join(paths.homeHostPath, 'context.json'),
+        containerPath: '/home/agent/context.json',
+      };
+    },
+    resultPathsForContext: (context) => {
+      const paths = buildSandboxPaths(sandboxRoot, context);
+
+      return {
+        hostPath: path.join(paths.homeHostPath, 'result.json'),
+        containerPath: '/home/agent/result.json',
+      };
+    },
+    writeContext: async (contextPath, context) => {
+      const paths = buildSandboxPaths(sandboxRoot, context);
+      await Promise.all([
+        mkdir(paths.workspaceHostPath, { recursive: true }),
+        mkdir(paths.homeHostPath, { recursive: true }),
+      ]);
+      await writeFile(contextPath, `${JSON.stringify(context, null, 2)}\n`, 'utf8');
+    },
+    readResult: (resultPath) => readFile(resultPath, 'utf8'),
+    profileForContext: (context) => {
+      const paths = buildSandboxPaths(sandboxRoot, context);
+
+      return defaultSandboxProfile({
+        image,
+        workspaceMount: {
+          hostPath: paths.workspaceHostPath,
+          containerPath: '/workspace',
+        },
+        homeMount: {
+          hostPath: paths.homeHostPath,
+          containerPath: '/home/agent',
+        },
+      });
+    },
+    commandForContext: (_context, protocol) => [
+      ...commandTemplate,
+      protocol.contextContainerPath ?? '/home/agent/context.json',
+      protocol.resultContainerPath ?? '/home/agent/result.json',
+    ],
+  });
+}
+
+function buildSandboxPaths(sandboxRoot: string, context: AgentContext) {
+  const companyRoot = path.join(sandboxRoot, context.run.companyId);
+  const runRoot = path.join(companyRoot, 'runs', context.run.id);
+
+  return {
+    workspaceHostPath: path.join(companyRoot, 'workspace'),
+    homeHostPath: path.join(runRoot, 'home'),
+  };
+}
+
+function splitCommand(command: string) {
+  return command.trim().split(/\s+/).filter(Boolean);
 }
 
 function readOption(args: string[], option: string) {

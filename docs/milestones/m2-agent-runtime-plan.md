@@ -362,6 +362,17 @@ Default sandbox behavior:
 - CPU, memory, pids, and timeout limits enabled by default
 - no Docker or Podman socket mount
 
+Sandbox JSON adapter protocol:
+
+- Enable from CLI with `CEOWORKBENCH_AGENT_ADAPTER=sandbox-json`.
+- Optional root: `CEOWORKBENCH_SANDBOX_ROOT`, default `.ceoworkbench/sandbox`.
+- Optional image: `CEOWORKBENCH_AGENT_IMAGE`, default `ceoworkbench-agent:latest`.
+- Optional command: `CEOWORKBENCH_AGENT_COMMAND`, default `node /runner/agent.js`.
+- Each run writes `context.json` into the per-run home directory before launching the sandbox.
+- The sandbox command receives `/home/agent/context.json` and `/home/agent/result.json`.
+- The adapter accepts JSON from stdout, or reads `result.json` when stdout is empty.
+- The company workspace is mounted at `/workspace`; the per-run home is mounted at `/home/agent`.
+
 ### Verification
 
 Initial tests can validate command construction without running Podman. Add optional local integration test when Podman is available.

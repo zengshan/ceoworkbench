@@ -62,6 +62,85 @@ describe('SandboxedJsonAgentAdapter', () => {
     await expect(adapter.runStep(context)).resolves.toEqual(result);
   });
 
+  it('writes the context file before invoking the sandbox command', async () => {
+    const writes: Array<{ path: string; context: AgentContext }> = [];
+    const runtime: SandboxRuntime = {
+      async run(input) {
+        expect(writes).toHaveLength(1);
+        expect(input.command).toEqual(['node', '/runner/agent.js', '/home/agent/context.json', '/home/agent/result.json']);
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({ events: [] }),
+          stderr: '',
+          timedOut: false,
+        };
+      },
+    };
+    const adapter = new SandboxedJsonAgentAdapter({
+      runtime,
+      contextPathsForContext: () => ({
+        hostPath: '/srv/company/runs/run-1/home/context.json',
+        containerPath: '/home/agent/context.json',
+      }),
+      resultPathsForContext: () => ({
+        hostPath: '/srv/company/runs/run-1/home/result.json',
+        containerPath: '/home/agent/result.json',
+      }),
+      writeContext: async (contextPath, agentContext) => {
+        writes.push({ path: contextPath, context: agentContext });
+      },
+      profileForContext: () => ({
+        image: 'ceoworkbench-agent:latest',
+        workspaceMount: { hostPath: '/srv/company/workspace', containerPath: '/workspace' },
+        homeMount: { hostPath: '/srv/company/runs/run-1/home', containerPath: '/home/agent' },
+      }),
+      commandForContext: (_agentContext, protocol) => ['node', '/runner/agent.js', protocol.contextContainerPath, protocol.resultContainerPath],
+    });
+
+    await adapter.runStep(context);
+
+    expect(writes[0]).toEqual({
+      path: '/srv/company/runs/run-1/home/context.json',
+      context,
+    });
+  });
+
+  it('reads result JSON from the host result path when stdout is empty', async () => {
+    const runtime: SandboxRuntime = {
+      async run() {
+        return {
+          exitCode: 0,
+          stdout: '',
+          stderr: '',
+          timedOut: false,
+        };
+      },
+    };
+    const adapter = new SandboxedJsonAgentAdapter({
+      runtime,
+      contextPathsForContext: () => ({
+        hostPath: '/srv/company/runs/run-1/home/context.json',
+        containerPath: '/home/agent/context.json',
+      }),
+      resultPathsForContext: () => ({
+        hostPath: '/srv/company/runs/run-1/home/result.json',
+        containerPath: '/home/agent/result.json',
+      }),
+      readResult: async (resultPath) => {
+        expect(resultPath).toBe('/srv/company/runs/run-1/home/result.json');
+        return JSON.stringify({ events: [agentEvent] });
+      },
+      profileForContext: () => ({
+        image: 'ceoworkbench-agent:latest',
+        workspaceMount: { hostPath: '/srv/company/workspace', containerPath: '/workspace' },
+        homeMount: { hostPath: '/srv/company/runs/run-1/home', containerPath: '/home/agent' },
+      }),
+      commandForContext: () => ['node', '/runner/agent.js'],
+    });
+
+    await expect(adapter.runStep(context)).resolves.toEqual({ events: [agentEvent] });
+  });
+
   it('fails the run when the sandbox times out', async () => {
     const runtime: SandboxRuntime = {
       async run() {

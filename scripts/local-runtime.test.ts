@@ -17,6 +17,7 @@ describe('local runtime scripts', () => {
     expect(start).toContain('npm run ceoworkbench -- db migrate');
     expect(report).toContain('npm run ceoworkbench -- watch');
     expect(report).toContain('npm run ceoworkbench -- status');
+    expect(report).toContain('npm run ceoworkbench -- team');
     expect(report).toContain('npm run ceoworkbench -- report --artifacts');
     expect(cleanup).toContain('podman rm -f "$container_name"');
     expect(cleanup).toContain('rm -rf .ceoworkbench');

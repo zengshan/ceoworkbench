@@ -18,5 +18,9 @@ echo "Status"
 npm run ceoworkbench -- status
 
 echo
+echo "Team"
+npm run ceoworkbench -- team
+
+echo
 echo "Artifacts"
 npm run ceoworkbench -- report --artifacts

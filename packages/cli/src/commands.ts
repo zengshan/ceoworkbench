@@ -212,6 +212,11 @@ export async function runCli(args: string[], runtime = createCliRuntime()): Prom
     return renderTerminalReport(await buildStatusReport(runtime.storage, company.id));
   }
 
+  if (command === 'team') {
+    const company = await requireCurrentCompany(runtime.storage);
+    return renderTerminalReport(await buildStatusReport(runtime.storage, company.id));
+  }
+
   if (command === 'report') {
     const company = await requireCurrentCompany(runtime.storage);
     const format = readOption([subcommand, ...rest].filter(Boolean), '--format') ?? 'terminal';
@@ -265,6 +270,7 @@ function help() {
     'ceoworkbench start [--once] [--max-ticks <count>]',
     'ceoworkbench watch',
     'ceoworkbench status',
+    'ceoworkbench team',
     'ceoworkbench report [--artifacts] [--format markdown]',
   ].join('\n');
 }

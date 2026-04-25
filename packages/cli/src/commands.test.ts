@@ -16,11 +16,14 @@ describe('ceoworkbench CLI commands', () => {
 
     const watchOutput = await runCli(['watch'], runtime);
     const statusOutput = await runCli(['status'], runtime);
+    const teamOutput = await runCli(['team'], runtime);
     const artifactReport = await runCli(['report', '--artifacts'], runtime);
     const markdownReport = await runCli(['report', '--format', 'markdown'], runtime);
 
     expect(watchOutput).toContain('run_completed');
     expect(statusOutput).toContain('Company status: novel');
+    expect(teamOutput).toContain('Team members');
+    expect(teamOutput).toContain('manager');
     expect(artifactReport).toContain('project-plan.md');
     expect(markdownReport).toContain('# Run summary:');
   });

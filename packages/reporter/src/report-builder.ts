@@ -2,9 +2,11 @@ import type { Artifact, Company, EntityId, ReportDocument, ReportMetric } from '
 import type { Storage } from '../../storage/src';
 
 export async function buildStatusReport(storage: Storage, companyId: EntityId): Promise<ReportDocument> {
-  const [companies, runs, tasks, artifacts, decisionRequests] = await Promise.all([
+  const [companies, agents, runs, events, tasks, artifacts, decisionRequests] = await Promise.all([
     storage.listCompanies(),
+    storage.listAgents(companyId),
     storage.listRuns(companyId),
+    storage.listEvents(companyId),
     storage.listTasks(companyId),
     storage.listArtifacts(companyId),
     storage.listDecisionRequests(companyId),
@@ -15,13 +17,29 @@ export async function buildStatusReport(storage: Storage, companyId: EntityId): 
   const queuedRuns = runs.filter((run) => run.status === 'queued' || run.status === 'retrying').length;
   const failedRuns = runs.filter((run) => run.status === 'failed').length;
 
-  return baseReport(company, 'status', `Company status: ${company.name}`, [
-    metric('Goal', company.goal),
-    metric('Runs', `${queuedRuns} queued, ${runningRuns} running, ${failedRuns} failed`),
-    metric('Tasks', `${tasks.filter((task) => task.status === 'completed').length}/${tasks.length} completed`),
-    metric('Artifacts', String(artifacts.length)),
-    metric('Pending CEO', String(pendingDecisions), pendingDecisions ? 'requires_decision' : 'info'),
-  ]);
+  return {
+    ...baseReport(company, 'status', `Company status: ${company.name}`, [
+      metric('Goal', company.goal),
+      metric('Runs', `${queuedRuns} queued, ${runningRuns} running, ${failedRuns} failed`),
+      metric('Tasks', `${tasks.filter((task) => task.status === 'completed').length}/${tasks.length} completed`),
+      metric('Artifacts', String(artifacts.length)),
+      metric('Agents', String(agents.length)),
+      metric('Pending CEO', String(pendingDecisions), pendingDecisions ? 'requires_decision' : 'info'),
+    ]),
+    tables: [
+      {
+        title: 'Team members',
+        columns: ['Agent', 'Role', 'Lifecycle', 'State', 'Latest activity'],
+        rows: agents.map((agent) => [
+          agent.name,
+          agent.role,
+          agent.lifecycle,
+          currentAgentState(agent.id, runs),
+          latestAgentActivity(agent.id, events),
+        ]),
+      },
+    ],
+  };
 }
 
 export async function buildArtifactReport(storage: Storage, companyId: EntityId): Promise<ReportDocument> {
@@ -182,4 +200,35 @@ function groupArtifactsByAgent(artifacts: Artifact[], agentNameById: Map<string,
   }
 
   return grouped;
+}
+
+function currentAgentState(agentId: EntityId, runs: Awaited<ReturnType<Storage['listRuns']>>) {
+  const activeRun = runs.find((run) => run.agentId === agentId && ['running', 'leasing'].includes(run.status));
+
+  if (activeRun) {
+    return activeRun.status;
+  }
+
+  const queuedRun = runs.find((run) => run.agentId === agentId && ['queued', 'retrying'].includes(run.status));
+
+  if (queuedRun) {
+    return queuedRun.status;
+  }
+
+  const latestRun = [...runs].reverse().find((run) => run.agentId === agentId);
+  return latestRun?.status ?? 'idle';
+}
+
+function latestAgentActivity(agentId: EntityId, events: Awaited<ReturnType<Storage['listEvents']>>) {
+  const agentEvent = [...events]
+    .reverse()
+    .find((candidate) => candidate.agentId === agentId && candidate.type === 'agent_event_emitted');
+  const event = agentEvent ?? [...events].reverse().find((candidate) => candidate.agentId === agentId);
+
+  if (!event) {
+    return 'No activity yet';
+  }
+
+  const text = event.payload.text ?? event.payload.message ?? event.payload.title;
+  return typeof text === 'string' && text.length ? text : event.type;
 }

@@ -39,4 +39,19 @@ describe('ceoworkbench CLI commands', () => {
     const runs = await runtime.storage.listRuns('company-000001');
     expect(runs.at(-1)?.kind).toBe('ceo_decision');
   });
+
+  it('processes multiple queued runs with a bounded scheduler loop', async () => {
+    const runtime = createCliRuntime();
+
+    await runCli(['company', 'create', 'novel', '--goal', 'Publish a novel'], runtime);
+    await runCli(['agent', 'create', 'manager', '--role', 'manager'], runtime);
+    await runCli(['send', 'manager', '第一轮拆解'], runtime);
+    await runCli(['send', 'manager', '第二轮拆解'], runtime);
+
+    const output = await runCli(['start', '--max-ticks', '2'], runtime);
+    const runs = await runtime.storage.listRuns('company-000001');
+
+    expect(output).toBe('Processed 2 runs.');
+    expect(runs.filter((run) => run.status === 'completed')).toHaveLength(2);
+  });
 });

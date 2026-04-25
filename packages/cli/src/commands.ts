@@ -166,6 +166,28 @@ export async function runCli(args: string[], runtime = createCliRuntime()): Prom
 
   if (command === 'start') {
     const company = await requireCurrentCompany(runtime.storage);
+    const maxTicks = Number(readOption([subcommand, ...rest].filter(Boolean), '--max-ticks') ?? 1);
+
+    if (!Number.isInteger(maxTicks) || maxTicks < 1) {
+      throw new Error('Usage: ceoworkbench start [--once] [--max-ticks <count>]');
+    }
+
+    if (maxTicks > 1) {
+      let processed = 0;
+
+      for (let tick = 0; tick < maxTicks; tick += 1) {
+        const run = await runtime.supervisor.tick(company.id);
+
+        if (!run) {
+          break;
+        }
+
+        processed += 1;
+      }
+
+      return processed === 0 ? 'No queued runs.' : `Processed ${processed} runs.`;
+    }
+
     const run = await runtime.supervisor.tick(company.id);
     return run ? `Processed run ${run.id}.` : 'No queued runs.';
   }
@@ -231,7 +253,7 @@ function help() {
     'ceoworkbench company create <name> --goal <goal>',
     'ceoworkbench agent create <name> --role manager',
     'ceoworkbench send <agent> <message>',
-    'ceoworkbench start --once',
+    'ceoworkbench start [--once] [--max-ticks <count>]',
     'ceoworkbench watch',
     'ceoworkbench status',
     'ceoworkbench report [--artifacts] [--format markdown]',

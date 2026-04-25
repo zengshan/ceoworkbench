@@ -4,13 +4,23 @@ This guide covers the current CLI-first runtime experience.
 
 ## Full local experience
 
-Use these commands when you want persistent reports after a demo run:
+Use these commands when you want persistent reports and a sandboxed CEO-first workflow:
 
 ```bash
 ./scripts/setup-agent-sandbox.sh
 ./scripts/start-local-runtime.sh
 ./scripts/run-sandbox-demo.sh
 ./scripts/watch-report.sh
+```
+
+The demo script now runs the same flow a CEO should use:
+
+```bash
+npm run ceoworkbench -- company init novel --goal "完成一部 12 万字科幻小说出版包"
+npm run ceoworkbench -- ceo "请总经理拆解第一阶段工作"
+npm run ceoworkbench -- work --until-idle
+npm run ceoworkbench -- briefing
+npm run ceoworkbench -- artifact show latest
 ```
 
 Clean all local runtime state:
@@ -21,7 +31,7 @@ Clean all local runtime state:
 
 ## Default deterministic demo
 
-The default mode does not require Podman or an API key. It uses the fake manager adapter and exercises the same storage, supervisor, event, artifact, and report flow.
+The default mode does not require Podman or an API key. It uses the fake manager adapter and exercises the same storage, supervisor, event, artifact, and report flow. This command is kept for regression checks; prefer the CEO-first flow above for product experience.
 
 ```bash
 npm run ceoworkbench -- demo
@@ -35,6 +45,33 @@ Expected result:
 - The supervisor processes the run.
 - `watch` shows the event stream.
 - `report --artifacts` shows the generated project-plan artifact metadata.
+
+## CEO-first commands
+
+Create a company and its initial CEO Office manager:
+
+```bash
+npm run ceoworkbench -- company init novel --goal "完成一部 12 万字科幻小说出版包"
+```
+
+Send work to the manager without naming the agent:
+
+```bash
+npm run ceoworkbench -- ceo "请总经理拆解第一阶段工作"
+```
+
+Process queued runs until the company is idle:
+
+```bash
+npm run ceoworkbench -- work --until-idle
+```
+
+Read the CEO briefing and latest artifact content:
+
+```bash
+npm run ceoworkbench -- briefing
+npm run ceoworkbench -- artifact show latest
+```
 
 ## Direct agent runner smoke test
 

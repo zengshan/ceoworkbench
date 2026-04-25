@@ -7,6 +7,7 @@ import {
   getRunKindForMessage,
   getRunPriority,
   type Agent,
+  type Artifact,
   type Clock,
   type Company,
   type IdGenerator,
@@ -30,6 +31,7 @@ export type CliRuntime = {
   clock: Clock;
   ids: IdGenerator;
   supervisor: Supervisor;
+  workspaceRoot: string;
   close?: () => Promise<void>;
 };
 
@@ -42,12 +44,14 @@ export function createCliRuntime(storage?: RuntimeStorage, options: CliRuntimeOp
   const runtimeStorage = storage ?? createDefaultStorage(options.env);
   const clock = new SystemClock();
   const ids = runtimeStorage instanceof MemoryStorage ? new SequentialIdGenerator() : new RandomIdGenerator();
+  const workspaceRoot = getWorkspaceRoot(options.env);
   const supervisor = new Supervisor({
     storage: runtimeStorage,
     clock,
     ids,
     adapter: createAgentAdapter(options),
     leaseOwner: 'cli-worker',
+    writeArtifact: createArtifactWriter(runtimeStorage),
   });
 
   return {
@@ -55,6 +59,7 @@ export function createCliRuntime(storage?: RuntimeStorage, options: CliRuntimeOp
     clock,
     ids,
     supervisor,
+    workspaceRoot,
     close: runtimeStorage.close ? () => runtimeStorage.close!() : undefined,
   };
 }
@@ -99,6 +104,28 @@ export async function runCli(args: string[], runtime = createCliRuntime()): Prom
     return lines.join('\n');
   }
 
+  if (command === 'company' && subcommand === 'init') {
+    const name = rest[0];
+    const goal = readOption(rest, '--goal') ?? `${name} company goal`;
+
+    if (!name) {
+      throw new Error('Usage: ceoworkbench company init <name> --goal <goal>');
+    }
+
+    const company = await createCompany(runtime, name, goal);
+    const manager = await createAgent(runtime, company.id, 'manager', 'manager');
+    await runtime.storage.createMemoryEntry({
+      id: runtime.ids.next('memory'),
+      companyId: company.id,
+      kind: 'goal',
+      title: 'Company charter',
+      content: goal,
+      createdAt: runtime.clock.now(),
+    });
+
+    return `Initialized company ${company.name} (${company.id}) with CEO Office manager ${manager.name}.`;
+  }
+
   if (command === 'company' && subcommand === 'create') {
     const name = rest[0];
     const goal = readOption(rest, '--goal') ?? `${name} company goal`;
@@ -107,17 +134,7 @@ export async function runCli(args: string[], runtime = createCliRuntime()): Prom
       throw new Error('Usage: ceoworkbench company create <name> --goal <goal>');
     }
 
-    const now = runtime.clock.now();
-    const company: Company = {
-      id: runtime.ids.next('company'),
-      name,
-      goal,
-      status: 'active',
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    await runtime.storage.createCompany(company);
+    const company = await createCompany(runtime, name, goal);
     return `Created company ${company.name} (${company.id}).`;
   }
 
@@ -130,21 +147,20 @@ export async function runCli(args: string[], runtime = createCliRuntime()): Prom
       throw new Error('Usage: ceoworkbench agent create <name> --role <role>');
     }
 
-    const now = runtime.clock.now();
-    const agent: Agent = {
-      id: runtime.ids.next('agent'),
-      companyId: company.id,
-      name,
-      role: role === 'manager' ? 'manager' : 'worker',
-      lifecycle: 'on_demand',
-      capabilities: ['chat', 'plan', 'report', 'memory.write'],
-      sandboxProfile: 'podman-default',
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    await runtime.storage.createAgent(agent);
+    const agent = await createAgent(runtime, company.id, name, role);
     return `Created agent ${agent.name} (${agent.role}).`;
+  }
+
+  if (command === 'ceo') {
+    const content = [subcommand, ...rest].filter(Boolean).join(' ');
+    const company = await requireCurrentCompany(runtime.storage);
+    const manager = await requireManager(runtime.storage, company.id);
+
+    if (!content) {
+      throw new Error('Usage: ceoworkbench ceo <message>');
+    }
+
+    return queueCeoMessage(runtime, company, manager, content, 'steer');
   }
 
   if (command === 'send') {
@@ -158,19 +174,20 @@ export async function runCli(args: string[], runtime = createCliRuntime()): Prom
       throw new Error('Usage: ceoworkbench send <agent> <message> [--type steer|follow_up]');
     }
 
-    const message: Message = {
-      id: runtime.ids.next('message'),
-      companyId: company.id,
-      agentId: agent.id,
-      author: 'ceo',
-      kind: normalizeMessageKind(kind),
-      content,
-      createdAt: runtime.clock.now(),
-    };
+    return queueCeoMessage(runtime, company, agent, content, normalizeMessageKind(kind));
+  }
 
-    const runKind = getRunKindForMessage(message.kind);
-    await runtime.supervisor.handleMessage(message, agent);
-    return `Queued ${runKind} run for ${agent.name} at priority ${getRunPriority(runKind)}.`;
+  if (command === 'work') {
+    const company = await requireCurrentCompany(runtime.storage);
+    const untilIdle = [subcommand, ...rest].includes('--until-idle');
+    const ticks = Number(readOption([subcommand, ...rest].filter(Boolean), '--ticks') ?? (untilIdle ? 100 : 1));
+
+    if (!Number.isInteger(ticks) || ticks < 1) {
+      throw new Error('Usage: ceoworkbench work [--until-idle] [--ticks <count>]');
+    }
+
+    const processed = await processRuns(runtime, company.id, ticks);
+    return processed === 0 ? 'No queued runs.' : `Processed ${processed} runs.`;
   }
 
   if (command === 'start') {
@@ -182,17 +199,7 @@ export async function runCli(args: string[], runtime = createCliRuntime()): Prom
     }
 
     if (maxTicks > 1) {
-      let processed = 0;
-
-      for (let tick = 0; tick < maxTicks; tick += 1) {
-        const run = await runtime.supervisor.tick(company.id);
-
-        if (!run) {
-          break;
-        }
-
-        processed += 1;
-      }
+      const processed = await processRuns(runtime, company.id, maxTicks);
 
       return processed === 0 ? 'No queued runs.' : `Processed ${processed} runs.`;
     }
@@ -240,6 +247,26 @@ export async function runCli(args: string[], runtime = createCliRuntime()): Prom
     return format === 'markdown' ? renderMarkdownReport(report) : renderTerminalReport(report);
   }
 
+  if (command === 'artifact') {
+    const company = await requireCurrentCompany(runtime.storage);
+
+    if (subcommand === 'list') {
+      const artifacts = await runtime.storage.listArtifacts(company.id);
+      return artifacts.length
+        ? artifacts.map((artifact, index) => `${index + 1}. ${artifact.path} (${artifact.status})`).join('\n')
+        : 'No artifacts.';
+    }
+
+    if (subcommand === 'show') {
+      const selector = rest[0] ?? 'latest';
+      const artifact = await requireArtifact(runtime.storage, company.id, selector);
+      const content = await readArtifactContent(company, artifact);
+      return `${artifact.path}\n\n${content}`;
+    }
+
+    throw new Error('Usage: ceoworkbench artifact list | artifact show latest');
+  }
+
   if (command === 'decide') {
     const decisionId = subcommand;
     const option = readOption(rest, '--option') ?? readOption(rest, '--custom');
@@ -274,17 +301,89 @@ function help() {
     'ceoworkbench init',
     'ceoworkbench db migrate',
     'ceoworkbench demo',
+    'ceoworkbench company init <name> --goal <goal>',
     'ceoworkbench company create <name> --goal <goal>',
     'ceoworkbench agent create <name> --role manager',
+    'ceoworkbench ceo <message>',
     'ceoworkbench send <agent> <message>',
+    'ceoworkbench work [--until-idle] [--ticks <count>]',
     'ceoworkbench start [--once] [--max-ticks <count>]',
     'ceoworkbench watch',
     'ceoworkbench status',
     'ceoworkbench team',
     'ceoworkbench briefing',
     'ceoworkbench timeline',
+    'ceoworkbench artifact list',
+    'ceoworkbench artifact show latest',
     'ceoworkbench report [--artifacts] [--format markdown]',
   ].join('\n');
+}
+
+async function createCompany(runtime: CliRuntime, name: string, goal: string) {
+  const now = runtime.clock.now();
+  const company: Company = {
+    id: runtime.ids.next('company'),
+    name,
+    goal,
+    status: 'active',
+    workspacePath: path.join(runtime.workspaceRoot, name),
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  await mkdir(company.workspacePath!, { recursive: true });
+  await runtime.storage.createCompany(company);
+  return company;
+}
+
+async function createAgent(runtime: CliRuntime, companyId: string, name: string, role: string) {
+  const now = runtime.clock.now();
+  const agent: Agent = {
+    id: runtime.ids.next('agent'),
+    companyId,
+    name,
+    role: role === 'manager' ? 'manager' : 'worker',
+    lifecycle: 'on_demand',
+    capabilities: ['chat', 'plan', 'report', 'memory.write'],
+    sandboxProfile: 'podman-default',
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  await runtime.storage.createAgent(agent);
+  return agent;
+}
+
+async function queueCeoMessage(runtime: CliRuntime, company: Company, agent: Agent, content: string, kind: MessageKind) {
+  const message: Message = {
+    id: runtime.ids.next('message'),
+    companyId: company.id,
+    agentId: agent.id,
+    author: 'ceo',
+    kind,
+    content,
+    createdAt: runtime.clock.now(),
+  };
+
+  const runKind = getRunKindForMessage(message.kind);
+  await runtime.supervisor.handleMessage(message, agent);
+  return `Queued ${runKind} run for ${agent.name} at priority ${getRunPriority(runKind)}.`;
+}
+
+async function processRuns(runtime: CliRuntime, companyId: string, ticks: number) {
+  let processed = 0;
+
+  for (let tick = 0; tick < ticks; tick += 1) {
+    const run = await runtime.supervisor.tick(companyId);
+
+    if (!run) {
+      break;
+    }
+
+    processed += 1;
+  }
+
+  return processed;
 }
 
 function createDefaultStorage(env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env): RuntimeStorage {
@@ -295,6 +394,29 @@ function createDefaultStorage(env: NodeJS.ProcessEnv | Record<string, string | u
   }
 
   return new MemoryStorage();
+}
+
+function getWorkspaceRoot(env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env) {
+  return env.CEOWORKBENCH_WORKSPACE_ROOT ?? path.join(process.cwd(), '.ceoworkbench', 'workspaces');
+}
+
+function createArtifactWriter(storage: RuntimeStorage) {
+  return async (artifact: Artifact) => {
+    if (!artifact.content) {
+      return;
+    }
+
+    const company = (await storage.listCompanies()).find((candidate) => candidate.id === artifact.companyId);
+    const workspacePath = company?.workspacePath;
+
+    if (!workspacePath) {
+      return;
+    }
+
+    const artifactPath = path.join(workspacePath, artifact.path);
+    await mkdir(path.dirname(artifactPath), { recursive: true });
+    await writeFile(artifactPath, `${artifact.content.trimEnd()}\n`, 'utf8');
+  };
 }
 
 function createAgentAdapter(options: CliRuntimeOptions): AgentAdapter {
@@ -411,13 +533,54 @@ function normalizeMessageKind(kind: string): MessageKind {
 }
 
 async function requireCurrentCompany(storage: Storage) {
-  const company = (await storage.listCompanies())[0];
+  const company = (await storage.listCompanies()).at(-1);
 
   if (!company) {
-    throw new Error('No company exists. Run: ceoworkbench company create <name> --goal <goal>');
+    throw new Error('No company exists. Run: ceoworkbench company init <name> --goal <goal>');
   }
 
   return company;
+}
+
+async function requireManager(storage: Storage, companyId: string) {
+  const manager = (await storage.listAgents(companyId)).find((agent) => agent.role === 'manager');
+
+  if (!manager) {
+    throw new Error('Manager agent not found. Run: ceoworkbench agent create manager --role manager');
+  }
+
+  return manager;
+}
+
+async function requireArtifact(storage: Storage, companyId: string, selector: string) {
+  const artifacts = await storage.listArtifacts(companyId);
+  const artifact = selector === 'latest'
+    ? artifacts.at(-1)
+    : artifacts.find((candidate) => candidate.id === selector || candidate.path === selector);
+
+  if (!artifact) {
+    throw new Error(`Artifact not found: ${selector}`);
+  }
+
+  return artifact;
+}
+
+async function readArtifactContent(company: Company, artifact: Artifact) {
+  if (artifact.content) {
+    return artifact.content;
+  }
+
+  if (!company.workspacePath) {
+    return `No workspace path is configured for company ${company.name}.`;
+  }
+
+  const artifactPath = path.join(company.workspacePath, artifact.path);
+
+  try {
+    return await readFile(artifactPath, 'utf8');
+  } catch {
+    return `Artifact file not found on disk: ${artifactPath}`;
+  }
 }
 
 async function requireAgent(storage: Storage, companyId: string, agentName?: string) {

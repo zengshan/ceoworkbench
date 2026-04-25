@@ -104,4 +104,26 @@ describe('ceoworkbench CLI commands', () => {
     expect(context.run.id).toBe('run-000005');
     expect(context.messages[0].content).toBe('请拆解小说出版项目');
   });
+
+  it('supports the CEO-first workflow and shows artifact content', async () => {
+    const workspaceRoot = await mkdtemp(path.join(tmpdir(), 'ceoworkbench-workspace-'));
+    const runtime = createCliRuntime(undefined, {
+      env: {
+        CEOWORKBENCH_WORKSPACE_ROOT: workspaceRoot,
+      },
+    });
+
+    expect(await runCli(['company', 'init', 'novel', '--goal', '完成一部 12 万字科幻小说出版包'], runtime)).toContain('Initialized company novel');
+    expect(await runCli(['ceo', '请总经理拆解第一阶段工作'], runtime)).toContain('Queued ceo_steer run for manager');
+    expect(await runCli(['work', '--until-idle'], runtime)).toContain('Processed 1 runs.');
+
+    const briefing = await runCli(['briefing'], runtime);
+    const artifacts = await runCli(['artifact', 'list'], runtime);
+    const latestArtifact = await runCli(['artifact', 'show', 'latest'], runtime);
+
+    expect(briefing).toContain('CEO 简报');
+    expect(artifacts).toContain('project-plan.md');
+    expect(latestArtifact).toContain('# Project plan draft');
+    expect(latestArtifact).toContain('请总经理拆解第一阶段工作');
+  });
 });

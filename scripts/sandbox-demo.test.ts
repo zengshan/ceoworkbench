@@ -10,6 +10,9 @@ describe('sandbox demo scripts', () => {
     await expect(access('scripts/run-sandbox-demo.sh')).resolves.toBeUndefined();
     expect(setup).toContain('podman build -f Containerfile.agent -t ceoworkbench-agent:latest .');
     expect(demo).toContain('CEOWORKBENCH_AGENT_ADAPTER=sandbox-json');
-    expect(demo).toContain('npm run ceoworkbench -- demo');
+    expect(demo).toContain('npm run ceoworkbench -- company init novel');
+    expect(demo).toContain('npm run ceoworkbench -- ceo');
+    expect(demo).toContain('npm run ceoworkbench -- work --until-idle');
+    expect(demo).toContain('npm run ceoworkbench -- artifact show latest');
   });
 });

@@ -145,6 +145,7 @@ export type Artifact = {
   title: string;
   artifactType: string;
   status: ArtifactStatus;
+  content?: string;
   createdAt: ISODateTime;
   updatedAt: ISODateTime;
 };

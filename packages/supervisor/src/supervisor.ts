@@ -2,6 +2,7 @@ import {
   getRunKindForMessage,
   getRunPriority,
   type Agent,
+  type Artifact,
   type Clock,
   type IdGenerator,
   type Message,
@@ -19,6 +20,7 @@ export type SupervisorOptions = {
   ids: IdGenerator;
   leaseOwner: string;
   leaseMs?: number;
+  writeArtifact?: (artifact: Artifact) => Promise<void>;
 };
 
 export class Supervisor {
@@ -101,6 +103,7 @@ export class Supervisor {
       }
 
       for (const artifact of result.artifacts ?? []) {
+        await this.options.writeArtifact?.(artifact);
         await this.options.storage.createArtifact(artifact);
         await this.options.storage.appendRunEvent(this.event('artifact_created', artifact.companyId, {
           artifactId: artifact.id,

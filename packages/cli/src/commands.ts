@@ -1,4 +1,5 @@
 import {
+  RandomIdGenerator,
   SequentialIdGenerator,
   SystemClock,
   getRunKindForMessage,
@@ -14,17 +15,24 @@ import { buildArtifactReport, buildDecisionReport, buildRunSummaryReport, buildS
 import { FakeManagerAdapter } from '../../runtime/src';
 import { Supervisor } from '../../supervisor/src';
 import { MemoryStorage, type Storage } from '../../storage/src';
+import { PostgresStorage } from '../../storage-postgres/src';
 
 export type CliRuntime = {
-  storage: Storage;
+  storage: RuntimeStorage;
   clock: Clock;
   ids: IdGenerator;
   supervisor: Supervisor;
+  close?: () => Promise<void>;
 };
 
-export function createCliRuntime(storage = new MemoryStorage()): CliRuntime {
+export type RuntimeStorage = Storage & {
+  migrate?: () => Promise<void>;
+  close?: () => Promise<void>;
+};
+
+export function createCliRuntime(storage: RuntimeStorage = createDefaultStorage()): CliRuntime {
   const clock = new SystemClock();
-  const ids = new SequentialIdGenerator();
+  const ids = storage instanceof MemoryStorage ? new SequentialIdGenerator() : new RandomIdGenerator();
   const supervisor = new Supervisor({
     storage,
     clock,
@@ -33,7 +41,13 @@ export function createCliRuntime(storage = new MemoryStorage()): CliRuntime {
     leaseOwner: 'cli-worker',
   });
 
-  return { storage, clock, ids, supervisor };
+  return {
+    storage,
+    clock,
+    ids,
+    supervisor,
+    close: storage.close ? () => storage.close!() : undefined,
+  };
 }
 
 export async function runCli(args: string[], runtime = createCliRuntime()): Promise<string> {
@@ -44,7 +58,21 @@ export async function runCli(args: string[], runtime = createCliRuntime()): Prom
   }
 
   if (command === 'init') {
+    if (runtime.storage.migrate) {
+      await runtime.storage.migrate();
+      return 'Initialized ceoworkbench Postgres runtime.';
+    }
+
     return 'Initialized ceoworkbench runtime.';
+  }
+
+  if (command === 'db' && subcommand === 'migrate') {
+    if (!runtime.storage.migrate) {
+      return 'No database storage configured. Set CEOWORKBENCH_DATABASE_URL or DATABASE_URL.';
+    }
+
+    await runtime.storage.migrate();
+    return 'Postgres schema migrated.';
   }
 
   if (command === 'demo') {
@@ -112,7 +140,7 @@ export async function runCli(args: string[], runtime = createCliRuntime()): Prom
 
   if (command === 'send') {
     const agentName = subcommand;
-    const content = rest.filter((value) => !value.startsWith('--')).join(' ');
+    const content = readPositional(rest).join(' ');
     const kind = readOption(rest, '--type') ?? 'steer';
     const company = await requireCurrentCompany(runtime.storage);
     const agent = await requireAgent(runtime.storage, company.id, agentName);
@@ -198,6 +226,7 @@ export async function runCli(args: string[], runtime = createCliRuntime()): Prom
 function help() {
   return [
     'ceoworkbench init',
+    'ceoworkbench db migrate',
     'ceoworkbench demo',
     'ceoworkbench company create <name> --goal <goal>',
     'ceoworkbench agent create <name> --role manager',
@@ -209,6 +238,16 @@ function help() {
   ].join('\n');
 }
 
+function createDefaultStorage(): RuntimeStorage {
+  const connectionString = process.env.CEOWORKBENCH_DATABASE_URL ?? process.env.DATABASE_URL;
+
+  if (connectionString) {
+    return new PostgresStorage({ connectionString });
+  }
+
+  return new MemoryStorage();
+}
+
 function readOption(args: string[], option: string) {
   const index = args.indexOf(option);
   if (index === -1) {
@@ -216,6 +255,23 @@ function readOption(args: string[], option: string) {
   }
 
   return args[index + 1];
+}
+
+function readPositional(args: string[]) {
+  const values: string[] = [];
+
+  for (let index = 0; index < args.length; index += 1) {
+    const value = args[index];
+
+    if (value.startsWith('--')) {
+      index += 1;
+      continue;
+    }
+
+    values.push(value);
+  }
+
+  return values;
 }
 
 function normalizeMessageKind(kind: string): MessageKind {

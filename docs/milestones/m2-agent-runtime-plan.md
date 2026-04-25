@@ -287,6 +287,18 @@ Add end-to-end CLI tests for:
 
 Implement Postgres as the real source of truth.
 
+The CLI uses Postgres automatically when `CEOWORKBENCH_DATABASE_URL` or `DATABASE_URL` is set. Schema setup is available through:
+
+```bash
+npm run ceoworkbench -- db migrate
+```
+
+Integration tests are gated by `CEOWORKBENCH_TEST_DATABASE_URL`:
+
+```bash
+CEOWORKBENCH_TEST_DATABASE_URL=postgres://... npm test -- packages/storage-postgres
+```
+
 Required tables:
 
 - `companies`

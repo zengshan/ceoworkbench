@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import type { ISODateTime } from './types';
 
 export type Clock = {
@@ -21,5 +22,11 @@ export class SequentialIdGenerator implements IdGenerator {
     const value = String(this.nextValue).padStart(6, '0');
     this.nextValue += 1;
     return `${prefix}-${value}`;
+  }
+}
+
+export class RandomIdGenerator implements IdGenerator {
+  next(prefix: string) {
+    return `${prefix}-${randomUUID()}`;
   }
 }

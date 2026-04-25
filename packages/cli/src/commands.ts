@@ -288,7 +288,7 @@ function createAgentAdapter(options: CliRuntimeOptions): AgentAdapter {
 
   const sandboxRoot = env.CEOWORKBENCH_SANDBOX_ROOT ?? path.join(process.cwd(), '.ceoworkbench', 'sandbox');
   const image = env.CEOWORKBENCH_AGENT_IMAGE ?? 'ceoworkbench-agent:latest';
-  const commandTemplate = splitCommand(env.CEOWORKBENCH_AGENT_COMMAND ?? 'npx tsx /app/packages/agent-runner/src/bin.ts');
+  const commandTemplate = splitCommand(env.CEOWORKBENCH_AGENT_COMMAND ?? '');
 
   return new SandboxedJsonAgentAdapter({
     runtime: options.sandboxRuntime ?? new PodmanSandboxRuntime(),

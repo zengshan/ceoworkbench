@@ -7,6 +7,6 @@ describe('agent image containerfile', () => {
 
     expect(containerfile).toContain('FROM node:22-bookworm-slim');
     expect(containerfile).toContain('COPY packages ./packages');
-    expect(containerfile).toContain('ENTRYPOINT ["npx", "tsx", "/app/packages/agent-runner/src/bin.ts"]');
+    expect(containerfile).toContain('ENTRYPOINT ["/app/node_modules/.bin/tsx", "/app/packages/agent-runner/src/bin.ts"]');
   });
 });

@@ -13,7 +13,7 @@ import {
   type Message,
   type MessageKind,
 } from '../../core/src';
-import { buildArtifactReport, buildDecisionReport, buildRunSummaryReport, buildStatusReport, renderMarkdownReport, renderTerminalReport } from '../../reporter/src';
+import { buildArtifactReport, buildBriefingReport, buildDecisionReport, buildRunSummaryReport, buildStatusReport, buildTimelineReport, renderMarkdownReport, renderTerminalReport } from '../../reporter/src';
 import { FakeManagerAdapter, SandboxedJsonAgentAdapter, type AgentAdapter, type AgentContext } from '../../runtime/src';
 import { PodmanSandboxRuntime, defaultSandboxProfile, type SandboxRuntime } from '../../sandbox-podman/src';
 import { Supervisor } from '../../supervisor/src';
@@ -217,6 +217,16 @@ export async function runCli(args: string[], runtime = createCliRuntime()): Prom
     return renderTerminalReport(await buildStatusReport(runtime.storage, company.id));
   }
 
+  if (command === 'briefing') {
+    const company = await requireCurrentCompany(runtime.storage);
+    return renderTerminalReport(await buildBriefingReport(runtime.storage, company.id));
+  }
+
+  if (command === 'timeline') {
+    const company = await requireCurrentCompany(runtime.storage);
+    return renderTerminalReport(await buildTimelineReport(runtime.storage, company.id));
+  }
+
   if (command === 'report') {
     const company = await requireCurrentCompany(runtime.storage);
     const format = readOption([subcommand, ...rest].filter(Boolean), '--format') ?? 'terminal';
@@ -271,6 +281,8 @@ function help() {
     'ceoworkbench watch',
     'ceoworkbench status',
     'ceoworkbench team',
+    'ceoworkbench briefing',
+    'ceoworkbench timeline',
     'ceoworkbench report [--artifacts] [--format markdown]',
   ].join('\n');
 }

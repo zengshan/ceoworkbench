@@ -3,7 +3,7 @@ import type { Agent, Artifact, Company, RunEvent } from '../../core/src';
 import { MemoryStorage } from '../../storage/src';
 import { renderMarkdownReport } from './render-markdown';
 import { renderTerminalReport } from './render-terminal';
-import { buildArtifactReport, buildDecisionReport, buildStatusReport } from './report-builder';
+import { buildArtifactReport, buildBriefingReport, buildDecisionReport, buildStatusReport, buildTimelineReport } from './report-builder';
 
 const company: Company = {
   id: 'company-1',
@@ -131,5 +131,98 @@ describe('reporter', () => {
     expect(report.attention).toBe('requires_decision');
     expect(output).toContain('Choose sample direction');
     expect(output).toContain('B: Character suspense');
+  });
+
+  it('renders a CEO briefing with summary, team, artifacts, breakthroughs, and next actions', async () => {
+    const storage = new MemoryStorage();
+    await storage.createCompany(company);
+    await storage.createAgent(agent);
+    await storage.enqueueRun({
+      id: 'run-1',
+      companyId: company.id,
+      agentId: agent.id,
+      kind: 'ceo_steer',
+      status: 'completed',
+      priority: 100,
+      attempt: 0,
+      maxAttempts: 3,
+      queuedAt: '2026-04-25T00:00:00.000Z',
+      finishedAt: '2026-04-25T00:03:00.000Z',
+    });
+    await storage.createArtifact({
+      id: 'artifact-1',
+      companyId: company.id,
+      runId: 'run-1',
+      agentId: agent.id,
+      path: 'artifacts/run-1/project-plan.md',
+      title: 'Project plan draft',
+      artifactType: 'markdown',
+      status: 'submitted',
+      createdAt: '2026-04-25T00:03:00.000Z',
+      updatedAt: '2026-04-25T00:03:00.000Z',
+    });
+    await storage.appendRunEvent({
+      id: 'event-1',
+      companyId: company.id,
+      runId: 'run-1',
+      agentId: agent.id,
+      type: 'agent_event_emitted',
+      payload: { text: 'Manager created the first planning task and artifact.' },
+      createdAt: '2026-04-25T00:02:00.000Z',
+    });
+
+    const report = await buildBriefingReport(storage, company.id);
+    const output = renderTerminalReport(report);
+
+    expect(output).toContain('● CEO 简报：novel');
+    expect(output).toContain('关键数据');
+    expect(output).toContain('团队状态');
+    expect(output).toContain('Agent 产出文件');
+    expect(output).toContain('关键突破');
+    expect(output).toContain('下一步');
+    expect(output).toContain('manager');
+    expect(output).toContain('project-plan.md');
+    expect(output).toContain('Manager created the first planning task and artifact.');
+  });
+
+  it('renders a CEO timeline that translates raw run events into readable progress', async () => {
+    const storage = new MemoryStorage();
+    await storage.createCompany(company);
+    await storage.createAgent(agent);
+    await storage.appendRunEvent({
+      id: 'event-queued',
+      companyId: company.id,
+      runId: 'run-1',
+      agentId: agent.id,
+      type: 'run_queued',
+      payload: {},
+      createdAt: '2026-04-25T00:00:00.000Z',
+    });
+    await storage.appendRunEvent({
+      id: 'event-task',
+      companyId: company.id,
+      runId: 'run-1',
+      agentId: agent.id,
+      type: 'task_created',
+      payload: { title: 'Draft project decomposition' },
+      createdAt: '2026-04-25T00:01:00.000Z',
+    });
+    await storage.appendRunEvent({
+      id: 'event-artifact',
+      companyId: company.id,
+      runId: 'run-1',
+      agentId: agent.id,
+      type: 'artifact_created',
+      payload: { path: 'artifacts/run-1/project-plan.md' },
+      createdAt: '2026-04-25T00:02:00.000Z',
+    });
+
+    const report = await buildTimelineReport(storage, company.id);
+    const output = renderTerminalReport(report);
+
+    expect(output).toContain('● 公司时间线：novel');
+    expect(output).toContain('manager 收到工作，进入队列');
+    expect(output).toContain('manager 创建任务：Draft project decomposition');
+    expect(output).toContain('manager 产出文件：artifacts/run-1/project-plan.md');
   });
 });

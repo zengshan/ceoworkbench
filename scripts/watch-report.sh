@@ -10,17 +10,13 @@ if [ -z "${CEOWORKBENCH_DATABASE_URL:-}" ]; then
   exit 1
 fi
 
-echo "Event stream"
-npm run ceoworkbench -- watch
+echo "CEO Briefing"
+npm run ceoworkbench -- briefing
 
 echo
-echo "Status"
-npm run ceoworkbench -- status
+echo "Timeline"
+npm run ceoworkbench -- timeline
 
 echo
 echo "Team"
 npm run ceoworkbench -- team
-
-echo
-echo "Artifacts"
-npm run ceoworkbench -- report --artifacts

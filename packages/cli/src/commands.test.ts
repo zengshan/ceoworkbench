@@ -17,6 +17,8 @@ describe('ceoworkbench CLI commands', () => {
     const watchOutput = await runCli(['watch'], runtime);
     const statusOutput = await runCli(['status'], runtime);
     const teamOutput = await runCli(['team'], runtime);
+    const briefingOutput = await runCli(['briefing'], runtime);
+    const timelineOutput = await runCli(['timeline'], runtime);
     const artifactReport = await runCli(['report', '--artifacts'], runtime);
     const markdownReport = await runCli(['report', '--format', 'markdown'], runtime);
 
@@ -24,6 +26,10 @@ describe('ceoworkbench CLI commands', () => {
     expect(statusOutput).toContain('Company status: novel');
     expect(teamOutput).toContain('Team members');
     expect(teamOutput).toContain('manager');
+    expect(briefingOutput).toContain('CEO 简报');
+    expect(briefingOutput).toContain('关键突破');
+    expect(timelineOutput).toContain('公司时间线');
+    expect(timelineOutput).toContain('manager 开始工作');
     expect(artifactReport).toContain('project-plan.md');
     expect(markdownReport).toContain('# Run summary:');
   });

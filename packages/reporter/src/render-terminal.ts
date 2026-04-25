@@ -1,7 +1,8 @@
 import type { ReportDocument, ReportTable } from '../../core/src';
 
 export function renderTerminalReport(report: ReportDocument) {
-  const lines: string[] = [`* ${report.headline}`, ''];
+  const headline = report.headline.startsWith('●') ? report.headline : `* ${report.headline}`;
+  const lines: string[] = [headline, ''];
 
   if (report.metrics.length) {
     lines.push('Key data:');

@@ -86,6 +86,10 @@ export class MemoryStorage implements Storage {
     return this.updateRun(runId, { status: 'running', startedAt });
   }
 
+  async blockRun(runId: EntityId, errorMessage: string, finishedAt: string) {
+    return this.updateRun(runId, { status: 'blocked', errorMessage, finishedAt });
+  }
+
   async completeRun(runId: EntityId, finishedAt: string) {
     return this.updateRun(runId, { status: 'completed', finishedAt });
   }

@@ -76,4 +76,37 @@ describe('Supervisor', () => {
     expect(artifacts[0].path).toContain('project-plan.md');
     expect(memoryEntries[0].kind).toBe('goal');
   });
+
+  it('blocks a run and records a decision request when the manager needs CEO input', async () => {
+    const storage = new MemoryStorage();
+    await storage.createCompany(company);
+    await storage.createAgent(manager);
+    const supervisor = new Supervisor({
+      storage,
+      adapter: new FakeManagerAdapter(),
+      clock,
+      ids: new SequentialIdGenerator(),
+      leaseOwner: 'test-worker',
+    });
+    const message: Message = {
+      id: 'message-1',
+      companyId: company.id,
+      agentId: manager.id,
+      author: 'ceo',
+      kind: 'steer',
+      content: '需要确认小说方向',
+      createdAt: '2026-04-25T00:00:00.000Z',
+    };
+
+    await supervisor.handleMessage(message, manager);
+    await supervisor.tick(company.id);
+
+    const runs = await storage.listRuns(company.id);
+    const decisions = await storage.listDecisionRequests(company.id);
+    const events = await storage.listEvents(company.id);
+
+    expect(runs[0].status).toBe('blocked');
+    expect(decisions[0].title).toBe('Confirm project direction');
+    expect(events.map((event) => event.type)).toContain('decision_required');
+  });
 });

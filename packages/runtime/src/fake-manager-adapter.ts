@@ -42,6 +42,8 @@ export class FakeManagerAdapter implements AgentAdapter {
       },
     ];
 
+    const requiresDecision = /确认|决策|选择|direction|decision/i.test(messageText);
+
     return {
       events,
       tasks: [
@@ -89,6 +91,32 @@ export class FakeManagerAdapter implements AgentAdapter {
           createdAt: now,
         },
       ],
+      decisionRequests: requiresDecision
+        ? [
+            {
+              id: `${context.run.id}-decision-direction`,
+              companyId: context.run.companyId,
+              title: 'Confirm project direction',
+              context: 'The manager needs CEO confirmation before continuing with a direction-sensitive plan.',
+              options: [
+                {
+                  id: 'A',
+                  label: 'Proceed with exploration first',
+                  tradeoff: 'Keeps options open but delays concrete execution.',
+                },
+                {
+                  id: 'B',
+                  label: 'Lock the recommended direction',
+                  tradeoff: 'Moves faster but narrows later choices.',
+                },
+              ],
+              recommendedOptionId: 'B',
+              impact: 'The next manager run will continue from the selected direction.',
+              createdAt: now,
+            },
+          ]
+        : [],
+      blocked: requiresDecision,
     };
   }
 }

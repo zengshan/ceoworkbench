@@ -26,6 +26,7 @@ export type Storage = {
   enqueueRun(run: Run): Promise<Run>;
   leaseNextRun(input: LeaseRunInput): Promise<Run | null>;
   startRun(runId: EntityId, startedAt: string): Promise<Run>;
+  blockRun(runId: EntityId, errorMessage: string, finishedAt: string): Promise<Run>;
   completeRun(runId: EntityId, finishedAt: string): Promise<Run>;
   failRun(runId: EntityId, errorMessage: string, finishedAt: string): Promise<Run>;
   recoverExpiredRuns(now: string): Promise<Run[]>;

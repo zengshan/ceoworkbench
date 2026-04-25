@@ -3,7 +3,7 @@ import type { Agent, Artifact, Company } from '../../core/src';
 import { MemoryStorage } from '../../storage/src';
 import { renderMarkdownReport } from './render-markdown';
 import { renderTerminalReport } from './render-terminal';
-import { buildArtifactReport, buildStatusReport } from './report-builder';
+import { buildArtifactReport, buildDecisionReport, buildStatusReport } from './report-builder';
 
 const company: Company = {
   id: 'company-1',
@@ -60,5 +60,30 @@ describe('reporter', () => {
 
     expect(report.tables[0].rows).toEqual([['manager', 'artifacts/report.md']]);
     expect(markdown).toContain('| manager | artifacts/report.md |');
+  });
+
+  it('renders pending CEO decisions as actionable report content', async () => {
+    const storage = new MemoryStorage();
+    await storage.createCompany(company);
+    await storage.createDecisionRequest({
+      id: 'decision-1',
+      companyId: company.id,
+      title: 'Choose sample direction',
+      context: 'The manager found two viable novel directions.',
+      options: [
+        { id: 'A', label: 'Hard sci-fi puzzle', tradeoff: 'Sharper concept, higher reading barrier' },
+        { id: 'B', label: 'Character suspense', tradeoff: 'More commercial, less hard sci-fi density' },
+      ],
+      recommendedOptionId: 'B',
+      impact: 'The outline and first three chapters will follow the selected direction.',
+      createdAt: '2026-04-25T00:00:00.000Z',
+    });
+
+    const report = await buildDecisionReport(storage, company.id);
+    const output = renderTerminalReport(report);
+
+    expect(report.attention).toBe('requires_decision');
+    expect(output).toContain('Choose sample direction');
+    expect(output).toContain('B: Character suspense');
   });
 });

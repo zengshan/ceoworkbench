@@ -10,7 +10,7 @@ import {
   type Message,
   type MessageKind,
 } from '../../core/src';
-import { buildArtifactReport, buildRunSummaryReport, buildStatusReport, renderMarkdownReport, renderTerminalReport } from '../../reporter/src';
+import { buildArtifactReport, buildDecisionReport, buildRunSummaryReport, buildStatusReport, renderMarkdownReport, renderTerminalReport } from '../../reporter/src';
 import { FakeManagerAdapter } from '../../runtime/src';
 import { Supervisor } from '../../supervisor/src';
 import { MemoryStorage, type Storage } from '../../storage/src';
@@ -156,11 +156,40 @@ export async function runCli(args: string[], runtime = createCliRuntime()): Prom
   if (command === 'report') {
     const company = await requireCurrentCompany(runtime.storage);
     const format = readOption([subcommand, ...rest].filter(Boolean), '--format') ?? 'terminal';
-    const report = [subcommand, ...rest].includes('--artifacts')
+    const reportArgs = [subcommand, ...rest];
+    const report = reportArgs.includes('--artifacts')
       ? await buildArtifactReport(runtime.storage, company.id)
-      : await buildRunSummaryReport(runtime.storage, company.id);
+      : reportArgs.includes('--decisions')
+        ? await buildDecisionReport(runtime.storage, company.id)
+        : await buildRunSummaryReport(runtime.storage, company.id);
 
     return format === 'markdown' ? renderMarkdownReport(report) : renderTerminalReport(report);
+  }
+
+  if (command === 'decide') {
+    const decisionId = subcommand;
+    const option = readOption(rest, '--option') ?? readOption(rest, '--custom');
+    const company = await requireCurrentCompany(runtime.storage);
+    const manager = (await runtime.storage.listAgents(company.id)).find((agent) => agent.role === 'manager');
+
+    if (!decisionId || !option || !manager) {
+      throw new Error('Usage: ceoworkbench decide <decision-id> --option <option>');
+    }
+
+    await runtime.storage.resolveDecisionRequest(decisionId, runtime.clock.now());
+    const message: Message = {
+      id: runtime.ids.next('message'),
+      companyId: company.id,
+      agentId: manager.id,
+      author: 'ceo',
+      kind: 'decision',
+      content: `Decision ${decisionId}: ${option}`,
+      createdAt: runtime.clock.now(),
+    };
+    const runKind = getRunKindForMessage(message.kind);
+    await runtime.supervisor.handleMessage(message, manager);
+
+    return `Resolved decision ${decisionId} with ${option}. Queued ${runKind} run.`;
   }
 
   throw new Error(`Unknown command: ${args.join(' ')}`);

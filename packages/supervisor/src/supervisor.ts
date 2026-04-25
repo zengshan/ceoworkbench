@@ -125,7 +125,8 @@ export class Supervisor {
       }
 
       if (result.blocked) {
-        await this.options.storage.failRun(runningRun.id, 'Run blocked by decision request', this.options.clock.now());
+        const finishedAt = this.options.clock.now();
+        await this.options.storage.blockRun(runningRun.id, 'Run blocked by decision request', finishedAt);
         return runningRun;
       }
 

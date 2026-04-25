@@ -20,4 +20,23 @@ describe('ceoworkbench CLI commands', () => {
     expect(artifactReport).toContain('project-plan.md');
     expect(markdownReport).toContain('# Run summary:');
   });
+
+  it('reports and resolves pending CEO decisions', async () => {
+    const runtime = createCliRuntime();
+
+    await runCli(['company', 'create', 'novel', '--goal', 'Publish a novel'], runtime);
+    await runCli(['agent', 'create', 'manager', '--role', 'manager'], runtime);
+    await runCli(['send', 'manager', '需要确认小说方向'], runtime);
+    await runCli(['start', '--once'], runtime);
+
+    const decisionReport = await runCli(['report', '--decisions'], runtime);
+    expect(decisionReport).toContain('Confirm project direction');
+    expect(decisionReport).toContain('run-000005-decision-direction');
+
+    const decideOutput = await runCli(['decide', 'run-000005-decision-direction', '--option', 'B'], runtime);
+    expect(decideOutput).toContain('Resolved decision run-000005-decision-direction with B');
+
+    const runs = await runtime.storage.listRuns('company-000001');
+    expect(runs.at(-1)?.kind).toBe('ceo_decision');
+  });
 });

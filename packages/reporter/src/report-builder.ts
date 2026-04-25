@@ -98,6 +98,40 @@ export async function buildRunSummaryReport(storage: Storage, companyId: EntityI
   };
 }
 
+export async function buildDecisionReport(storage: Storage, companyId: EntityId): Promise<ReportDocument> {
+  const [companies, decisionRequests] = await Promise.all([
+    storage.listCompanies(),
+    storage.listDecisionRequests(companyId),
+  ]);
+  const company = findCompany(companies, companyId);
+  const pendingDecisionRequests = decisionRequests.filter((request) => !request.resolvedAt);
+  const rows = pendingDecisionRequests.map((request) => [
+    request.id,
+    request.title,
+    request.recommendedOptionId ?? '-',
+    request.options.map((option) => `${option.id}: ${option.label}`).join('; '),
+  ]);
+
+  return {
+    ...baseReport(company, 'decision_briefing', `CEO decisions: ${company.name}`, [
+      metric('Pending decisions', String(pendingDecisionRequests.length), pendingDecisionRequests.length ? 'requires_decision' : 'info'),
+    ]),
+    attention: pendingDecisionRequests.length ? 'requires_decision' : 'info',
+    sections: pendingDecisionRequests.map((request) => ({
+      title: request.title,
+      body: `${request.context}\nImpact: ${request.impact}`,
+      items: request.options.map((option) => `${option.id}. ${option.label} - ${option.tradeoff}`),
+    })),
+    tables: [
+      {
+        title: 'Pending decisions',
+        columns: ['ID', 'Title', 'Recommended', 'Options'],
+        rows,
+      },
+    ],
+  };
+}
+
 function baseReport(company: Company, reportType: ReportDocument['reportType'], title: string, metrics: ReportMetric[]): ReportDocument {
   const now = new Date().toISOString();
 

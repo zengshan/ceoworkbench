@@ -89,7 +89,7 @@ describe('ceoworkbench CLI commands', () => {
     const contextPath = path.join(sandboxRoot, 'company-000001', 'runs', 'run-000005', 'home', 'context.json');
     const context = JSON.parse(await readFile(contextPath, 'utf8'));
 
-    expect(inputs[0].command).toEqual(['node', '/runner/agent.js', '/home/agent/context.json', '/home/agent/result.json']);
+    expect(inputs[0].command).toEqual(['npx', 'tsx', '/app/packages/agent-runner/src/bin.ts', '/home/agent/context.json', '/home/agent/result.json']);
     expect(inputs[0].profile.network).toBe('none');
     expect(inputs[0].profile.homeMount.hostPath).toBe(path.dirname(contextPath));
     expect(context.run.id).toBe('run-000005');

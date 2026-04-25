@@ -10,7 +10,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "ceoworkbench": "tsx packages/cli/src/bin.ts"
+    "ceoworkbench": "tsx packages/cli/src/bin.ts",
+    "agent-runner": "tsx packages/agent-runner/src/bin.ts"
   },
   "dependencies": {
     "@xyflow/react": "^12.10.2",

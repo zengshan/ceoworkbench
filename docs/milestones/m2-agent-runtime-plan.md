@@ -372,6 +372,8 @@ Sandbox JSON adapter protocol:
 - The sandbox command receives `/home/agent/context.json` and `/home/agent/result.json`.
 - The adapter accepts JSON from stdout, or reads `result.json` when stdout is empty.
 - The company workspace is mounted at `/workspace`; the per-run home is mounted at `/home/agent`.
+- The in-sandbox runner can use `CEOWORKBENCH_RUNNER_ADAPTER=fake-manager` for deterministic tests or `openai-responses` for a real model step.
+- `openai-responses` requires `OPENAI_API_KEY` and accepts `CEOWORKBENCH_AGENT_MODEL`.
 
 ### Verification
 

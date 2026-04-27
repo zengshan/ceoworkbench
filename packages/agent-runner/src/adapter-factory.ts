@@ -20,6 +20,7 @@ export function createAgentRunnerAdapter(env: AgentRunnerEnv = process.env): Age
     return new OpenAIResponsesAgentAdapter({
       apiKey,
       model: env.CEOWORKBENCH_AGENT_MODEL ?? 'gpt-5.2',
+      baseUrl: env.OPENAI_BASE_URL,
     });
   }
 

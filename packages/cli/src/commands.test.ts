@@ -105,6 +105,46 @@ describe('ceoworkbench CLI commands', () => {
     expect(context.messages[0].content).toBe('请拆解小说出版项目');
   });
 
+  it('enables network and forwards only runner env when sandboxed OpenAI runner is requested', async () => {
+    const sandboxRoot = await mkdtemp(path.join(tmpdir(), 'ceoworkbench-sandbox-openai-'));
+    const inputs: SandboxRunInput[] = [];
+    const sandboxRuntime: SandboxRuntime = {
+      async run(input) {
+        inputs.push(input);
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({ events: [] }),
+          stderr: '',
+          timedOut: false,
+        };
+      },
+    };
+    const runtime = createCliRuntime(undefined, {
+      env: {
+        CEOWORKBENCH_AGENT_ADAPTER: 'sandbox-json',
+        CEOWORKBENCH_SANDBOX_ROOT: sandboxRoot,
+        CEOWORKBENCH_RUNNER_ADAPTER: 'openai-responses',
+        CEOWORKBENCH_AGENT_MODEL: 'gpt-5.4',
+        OPENAI_API_KEY: 'sk-test',
+        UNRELATED_SECRET: 'must-not-enter-sandbox',
+      },
+      sandboxRuntime,
+    });
+
+    await runCli(['company', 'create', 'novel', '--goal', 'Publish a novel'], runtime);
+    await runCli(['agent', 'create', 'manager', '--role', 'manager'], runtime);
+    await runCli(['send', 'manager', '请拆解小说出版项目'], runtime);
+    await runCli(['start', '--once'], runtime);
+
+    expect(inputs[0].profile.network).toBe('slirp4netns');
+    expect(inputs[0].profile.limits?.timeoutSeconds).toBe(180);
+    expect(inputs[0].profile.env).toEqual({
+      CEOWORKBENCH_RUNNER_ADAPTER: 'openai-responses',
+      CEOWORKBENCH_AGENT_MODEL: 'gpt-5.4',
+      OPENAI_API_KEY: 'sk-test',
+    });
+  });
+
   it('supports the CEO-first workflow and shows artifact content', async () => {
     const workspaceRoot = await mkdtemp(path.join(tmpdir(), 'ceoworkbench-workspace-'));
     const runtime = createCliRuntime(undefined, {
@@ -125,5 +165,34 @@ describe('ceoworkbench CLI commands', () => {
     expect(artifacts).toContain('project-plan.md');
     expect(latestArtifact).toContain('# Project plan draft');
     expect(latestArtifact).toContain('请总经理拆解第一阶段工作');
+  });
+
+  it('lets the manager auto-staff specialist workers for a historical novel goal', async () => {
+    const runtime = createCliRuntime();
+
+    await runCli(['company', 'init', 'historical-novel', '--goal', '创作一部历史小说'], runtime);
+    await runCli(['ceo', '我要创作一部历史小说'], runtime);
+
+    expect(await runCli(['work', '--until-idle'], runtime)).toContain('Processed 5 runs.');
+
+    const agents = await runtime.storage.listAgents('company-000001');
+    const runs = await runtime.storage.listRuns('company-000001');
+    const teamOutput = await runCli(['team'], runtime);
+    const watchOutput = await runCli(['watch'], runtime);
+    const timelineOutput = await runCli(['timeline'], runtime);
+
+    expect(agents.map((agent) => agent.name)).toEqual([
+      'manager',
+      'researcher',
+      'architect',
+      'writer',
+      'editor',
+    ]);
+    expect(runs.filter((run) => run.status === 'completed')).toHaveLength(5);
+    expect(teamOutput).toContain('researcher');
+    expect(teamOutput).toContain('writer');
+    expect(watchOutput).toContain('agent_created');
+    expect(watchOutput).toContain('run_started');
+    expect(timelineOutput).toContain('architect 开始工作');
   });
 });

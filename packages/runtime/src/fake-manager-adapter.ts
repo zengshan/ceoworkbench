@@ -42,10 +42,44 @@ export class FakeManagerAdapter implements AgentAdapter {
       },
     ];
 
-    const requiresDecision = /确认|决策|选择|direction|decision/i.test(messageText);
+    const isCeoSteer = latestMessage?.author === 'ceo' && latestMessage.kind === 'steer';
+    const isHistoricalNovel = /历史小说|historical novel/i.test(messageText);
+    const requiresDecision = isCeoSteer && /确认|决策|选择|direction|decision/i.test(messageText);
 
     return {
       events,
+      delegations: isCeoSteer && isHistoricalNovel
+        ? [
+            {
+              agentName: 'researcher',
+              role: 'worker',
+              capabilities: ['research', 'report'],
+              objective: `Research the historical novel brief and recommend grounded period details for: ${messageText}`,
+              expectedOutput: 'A concise research brief covering era options, conflicts, daily-life details, and historical risk notes.',
+            },
+            {
+              agentName: 'architect',
+              role: 'worker',
+              capabilities: ['plot', 'structure', 'report'],
+              objective: `Design the story architecture for the historical novel goal: ${messageText}`,
+              expectedOutput: 'A story architecture brief with premise, main conflict, character roles, structure, and chapter rhythm.',
+            },
+            {
+              agentName: 'writer',
+              role: 'worker',
+              capabilities: ['drafting', 'scene-writing'],
+              objective: `Prepare the opening chapter direction for the historical novel goal: ${messageText}`,
+              expectedOutput: 'A first-chapter writing brief with opening scene, POV, protagonist entrance, hook, and sample direction.',
+            },
+            {
+              agentName: 'editor',
+              role: 'worker',
+              capabilities: ['editing', 'review'],
+              objective: `Define editorial standards for the historical novel goal: ${messageText}`,
+              expectedOutput: 'An editorial checklist covering historical credibility, character arcs, prose style, pacing, and reader appeal.',
+            },
+          ]
+        : undefined,
       tasks: [
         {
           id: `${context.run.id}-task-plan`,
@@ -130,7 +164,7 @@ export class FakeManagerAdapter implements AgentAdapter {
               createdAt: now,
             },
           ]
-        : [],
+        : undefined,
       blocked: requiresDecision,
     };
   }

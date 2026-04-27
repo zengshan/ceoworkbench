@@ -2,6 +2,8 @@ import {
   getRunKindForMessage,
   getRunPriority,
   type Agent,
+  type AgentLifecycle,
+  type AgentRole,
   type Artifact,
   type Clock,
   type IdGenerator,
@@ -10,6 +12,7 @@ import {
   type RunEvent,
 } from '../../core/src';
 import type { AgentAdapter } from '../../runtime/src';
+import type { AgentDelegationRequest } from '../../runtime/src';
 import { buildAgentContext } from '../../runtime/src';
 import type { Storage } from '../../storage/src';
 
@@ -102,6 +105,10 @@ export class Supervisor {
         }, runningRun.id, runningRun.agentId));
       }
 
+      for (const delegation of result.delegations ?? []) {
+        await this.delegateTask(runningRun, delegation);
+      }
+
       for (const artifact of result.artifacts ?? []) {
         await this.options.writeArtifact?.(artifact);
         await this.options.storage.createArtifact(artifact);
@@ -150,6 +157,80 @@ export class Supervisor {
     }
   }
 
+  private async delegateTask(sourceRun: Run, delegation: AgentDelegationRequest) {
+    const now = this.options.clock.now();
+    const agent = await this.findOrCreateDelegatedAgent(sourceRun.companyId, delegation, now, sourceRun);
+    const task = {
+      id: this.options.ids.next('task'),
+      companyId: sourceRun.companyId,
+      assignedAgentId: agent.id,
+      title: delegation.title ?? `Delegated task for ${agent.name}`,
+      objective: delegation.objective,
+      expectedOutput: delegation.expectedOutput,
+      status: 'queued' as const,
+      priority: delegation.priority ?? getRunPriority('continuation'),
+      dependencyTaskIds: [],
+      inputArtifactIds: [],
+      outputArtifactIds: [],
+      requiresReview: delegation.requiresReview ?? true,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    await this.options.storage.createTask(task);
+    await this.options.storage.appendRunEvent(this.event('task_created', task.companyId, {
+      taskId: task.id,
+      title: task.title,
+      delegatedByRunId: sourceRun.id,
+    }, sourceRun.id, sourceRun.agentId));
+
+    const message: Message = {
+      id: this.options.ids.next('message'),
+      companyId: sourceRun.companyId,
+      agentId: agent.id,
+      author: 'system',
+      kind: 'follow_up',
+      content: [
+        delegation.objective,
+        '',
+        `Expected output: ${delegation.expectedOutput}`,
+      ].join('\n'),
+      createdAt: now,
+    };
+
+    await this.handleMessage(message, agent);
+  }
+
+  private async findOrCreateDelegatedAgent(companyId: string, delegation: AgentDelegationRequest, now: string, sourceRun: Run) {
+    const existingAgent = (await this.options.storage.listAgents(companyId)).find((agent) => agent.name === delegation.agentName);
+
+    if (existingAgent) {
+      return existingAgent;
+    }
+
+    const agent: Agent = {
+      id: this.options.ids.next('agent'),
+      companyId,
+      name: delegation.agentName,
+      role: normalizeRole(delegation.role),
+      lifecycle: normalizeLifecycle(delegation.lifecycle),
+      capabilities: delegation.capabilities ?? ['chat', 'report'],
+      sandboxProfile: delegation.sandboxProfile ?? 'podman-default',
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    await this.options.storage.createAgent(agent);
+    await this.options.storage.appendRunEvent(this.event('agent_created', companyId, {
+      agentId: agent.id,
+      name: agent.name,
+      role: agent.role,
+      delegatedByRunId: sourceRun.id,
+    }, sourceRun.id, sourceRun.agentId));
+
+    return agent;
+  }
+
   private event(type: RunEvent['type'], companyId: string, payload: Record<string, unknown>, runId?: string, agentId?: string): RunEvent {
     return {
       id: this.options.ids.next('event'),
@@ -161,4 +242,12 @@ export class Supervisor {
       createdAt: this.options.clock.now(),
     };
   }
+}
+
+function normalizeRole(role?: AgentRole) {
+  return role ?? 'worker';
+}
+
+function normalizeLifecycle(lifecycle?: AgentLifecycle) {
+  return lifecycle ?? 'on_demand';
 }

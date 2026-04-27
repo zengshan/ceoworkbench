@@ -139,7 +139,7 @@ The per-run files are written under:
 
 ## Run with OpenAI Responses inside the runner
 
-The OpenAI mode is selected inside the sandbox runner.
+The OpenAI mode is selected inside the sandbox runner. When `CEOWORKBENCH_RUNNER_ADAPTER=openai-responses` is set, the sandbox profile enables `slirp4netns` networking and forwards only the runner allowlist (`CEOWORKBENCH_RUNNER_ADAPTER`, `CEOWORKBENCH_AGENT_MODEL`, `OPENAI_API_KEY`, and `OPENAI_BASE_URL`) into the container.
 
 ```bash
 export CEOWORKBENCH_AGENT_ADAPTER=sandbox-json
@@ -150,4 +150,4 @@ export OPENAI_API_KEY="..."
 npm run ceoworkbench -- start --once
 ```
 
-Current caveat: the default sandbox profile uses `--network none`, so real OpenAI calls require an explicit network-enabled sandbox profile in a later hardening step. Keep fake-manager as the default until we add per-agent network approval.
+The fake manager remains the default for deterministic regression tests. Use OpenAI mode for real multi-agent content generation runs.

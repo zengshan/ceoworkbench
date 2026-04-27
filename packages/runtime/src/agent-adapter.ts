@@ -1,4 +1,6 @@
 import type {
+  AgentLifecycle,
+  AgentRole,
   Artifact,
   DecisionRequest,
   MemoryEntry,
@@ -17,8 +19,22 @@ export type AgentContext = {
   memoryEntries: MemoryEntry[];
 };
 
+export type AgentDelegationRequest = {
+  agentName: string;
+  role?: AgentRole;
+  lifecycle?: AgentLifecycle;
+  capabilities?: string[];
+  sandboxProfile?: string;
+  title?: string;
+  objective: string;
+  expectedOutput: string;
+  priority?: number;
+  requiresReview?: boolean;
+};
+
 export type AgentStepResult = {
   events: RunEvent[];
+  delegations?: AgentDelegationRequest[];
   tasks?: Task[];
   artifacts?: Artifact[];
   memoryEntries?: MemoryEntry[];

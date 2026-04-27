@@ -26,6 +26,7 @@ export type RunEventType =
   | 'run_queued'
   | 'run_leased'
   | 'run_started'
+  | 'agent_created'
   | 'agent_event_emitted'
   | 'task_created'
   | 'artifact_created'

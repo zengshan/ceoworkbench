@@ -208,6 +208,15 @@ describe('reporter', () => {
       createdAt: '2026-04-25T00:01:00.000Z',
     });
     await storage.appendRunEvent({
+      id: 'event-agent-created',
+      companyId: company.id,
+      runId: 'run-1',
+      agentId: agent.id,
+      type: 'agent_created',
+      payload: { name: 'researcher', role: 'worker' },
+      createdAt: '2026-04-25T00:01:30.000Z',
+    });
+    await storage.appendRunEvent({
       id: 'event-artifact',
       companyId: company.id,
       runId: 'run-1',
@@ -216,13 +225,28 @@ describe('reporter', () => {
       payload: { path: 'artifacts/run-1/project-plan.md' },
       createdAt: '2026-04-25T00:02:00.000Z',
     });
+    await storage.createArtifact({
+      id: 'artifact-1',
+      companyId: company.id,
+      runId: 'run-1',
+      agentId: agent.id,
+      path: 'artifacts/run-1/project-plan.md',
+      title: 'Project plan draft',
+      artifactType: 'markdown',
+      status: 'submitted',
+      createdAt: '2026-04-25T00:02:00.000Z',
+      updatedAt: '2026-04-25T00:02:00.000Z',
+    });
 
     const report = await buildTimelineReport(storage, company.id);
     const output = renderTerminalReport(report);
 
     expect(output).toContain('● 公司时间线：novel');
+    expect(output).toContain('关键产出');
+    expect(output).toContain('manager 产出：artifacts/run-1/project-plan.md');
     expect(output).toContain('manager 收到工作，进入队列');
     expect(output).toContain('manager 创建任务：Draft project decomposition');
+    expect(output).toContain('manager 创建 worker：researcher');
     expect(output).toContain('manager 产出文件：artifacts/run-1/project-plan.md');
   });
 });

@@ -225,13 +225,18 @@ export async function buildBriefingReport(storage: Storage, companyId: EntityId)
 }
 
 export async function buildTimelineReport(storage: Storage, companyId: EntityId): Promise<ReportDocument> {
-  const [companies, agents, events] = await Promise.all([
+  const [companies, agents, events, artifacts] = await Promise.all([
     storage.listCompanies(),
     storage.listAgents(companyId),
     storage.listEvents(companyId),
+    storage.listArtifacts(companyId),
   ]);
   const company = findCompany(companies, companyId);
   const agentNameById = new Map(agents.map((agent) => [agent.id, agent.name]));
+  const outputItems = artifacts.slice(-10).map((artifact) => {
+    const agent = artifact.agentId ? agentNameById.get(artifact.agentId) ?? artifact.agentId : 'system';
+    return `${agent} 产出：${artifact.path}（${artifact.title} / ${artifact.status}）`;
+  });
   const translatedEvents = events
     .filter((event) => event.runId)
     .slice(-30)
@@ -243,6 +248,11 @@ export async function buildTimelineReport(storage: Storage, companyId: EntityId)
       metric('Agent', `${agents.length} 个`),
     ]),
     sections: [
+      {
+        title: '关键产出',
+        body: outputItems.length ? '以下是最近可检查的交付物。' : '暂无可检查的交付物。',
+        items: outputItems,
+      },
       {
         title: '最近进展',
         body: translatedEvents.length ? '以下是最近工作进展。' : '暂无工作进展。',
@@ -363,6 +373,8 @@ function translateEvent(event: RunEvent, agentNameById: Map<string, string>) {
       const text = event.payload.text ?? event.payload.message;
       return `${agent} 汇报：${typeof text === 'string' ? text : '更新了进展'}`;
     }
+    case 'agent_created':
+      return `${agent} 创建 worker：${event.payload.name ?? event.payload.agentId ?? '未命名成员'}`;
     case 'task_created':
       return `${agent} 创建任务：${event.payload.title ?? event.payload.taskId ?? '未命名任务'}`;
     case 'artifact_created':

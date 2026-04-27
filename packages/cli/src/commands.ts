@@ -459,9 +459,18 @@ function createAgentAdapter(options: CliRuntimeOptions): AgentAdapter {
     readResult: (resultPath) => readFile(resultPath, 'utf8'),
     profileForContext: (context) => {
       const paths = buildSandboxPaths(sandboxRoot, context);
+      const runnerEnv = buildSandboxRunnerEnv(env);
 
       return defaultSandboxProfile({
         image,
+        network: runnerEnv.CEOWORKBENCH_RUNNER_ADAPTER === 'openai-responses' ? 'slirp4netns' : 'none',
+        env: runnerEnv,
+        limits: {
+          cpus: '1',
+          memory: '1g',
+          pidsLimit: 256,
+          timeoutSeconds: runnerEnv.CEOWORKBENCH_RUNNER_ADAPTER === 'openai-responses' ? 180 : 60,
+        },
         workspaceMount: {
           hostPath: paths.workspaceHostPath,
           containerPath: '/workspace',
@@ -478,6 +487,26 @@ function createAgentAdapter(options: CliRuntimeOptions): AgentAdapter {
       protocol.resultContainerPath ?? '/home/agent/result.json',
     ],
   });
+}
+
+function buildSandboxRunnerEnv(env: NodeJS.ProcessEnv | Record<string, string | undefined>) {
+  const allowlist = [
+    'CEOWORKBENCH_RUNNER_ADAPTER',
+    'CEOWORKBENCH_AGENT_MODEL',
+    'OPENAI_API_KEY',
+    'OPENAI_BASE_URL',
+  ];
+  const runnerEnv: Record<string, string> = {};
+
+  for (const key of allowlist) {
+    const value = env[key];
+
+    if (value) {
+      runnerEnv[key] = value;
+    }
+  }
+
+  return runnerEnv;
 }
 
 function buildSandboxPaths(sandboxRoot: string, context: AgentContext) {

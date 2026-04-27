@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SequentialIdGenerator, type Agent, type Clock, type Company, type Message } from '../../core/src';
-import { FakeManagerAdapter } from '../../runtime/src';
+import { FakeManagerAdapter, type AgentAdapter } from '../../runtime/src';
 import { MemoryStorage } from '../../storage/src';
 import { Supervisor } from './supervisor';
 
@@ -108,5 +108,74 @@ describe('Supervisor', () => {
     expect(runs[0].status).toBe('blocked');
     expect(decisions[0].title).toBe('Confirm project direction');
     expect(events.map((event) => event.type)).toContain('decision_required');
+  });
+
+  it('creates missing worker agents and queues delegated task runs from a manager result', async () => {
+    const storage = new MemoryStorage();
+    await storage.createCompany(company);
+    await storage.createAgent(manager);
+    const adapter: AgentAdapter = {
+      async runStep(context) {
+        return {
+          events: [],
+          delegations: [
+            {
+              agentName: 'researcher',
+              role: 'worker',
+              objective: `Research historical context for ${context.messages.at(-1)?.content}`,
+              expectedOutput: 'A concise research brief with usable period details.',
+              capabilities: ['research', 'report'],
+            },
+          ],
+        };
+      },
+    };
+    const supervisor = new Supervisor({
+      storage,
+      adapter,
+      clock,
+      ids: new SequentialIdGenerator(),
+      leaseOwner: 'test-worker',
+    });
+    const message: Message = {
+      id: 'message-1',
+      companyId: company.id,
+      agentId: manager.id,
+      author: 'ceo',
+      kind: 'steer',
+      content: '创作一部历史小说',
+      createdAt: '2026-04-25T00:00:00.000Z',
+    };
+
+    await supervisor.handleMessage(message, manager);
+    await supervisor.tick(company.id);
+
+    const agents = await storage.listAgents(company.id);
+    const tasks = await storage.listTasks(company.id);
+    const runs = await storage.listRuns(company.id);
+    const messages = await storage.listMessages(company.id);
+
+    const researcher = agents.find((agent) => agent.name === 'researcher');
+    expect(researcher).toMatchObject({
+      role: 'worker',
+      capabilities: ['research', 'report'],
+    });
+    expect(tasks[0]).toMatchObject({
+      assignedAgentId: researcher?.id,
+      title: 'Delegated task for researcher',
+      status: 'queued',
+    });
+    expect(messages.at(-1)).toMatchObject({
+      agentId: researcher?.id,
+      author: 'system',
+      kind: 'follow_up',
+      content: expect.stringContaining('Research historical context'),
+    });
+    expect(runs.at(-1)).toMatchObject({
+      agentId: researcher?.id,
+      kind: 'continuation',
+      status: 'queued',
+      priority: 50,
+    });
   });
 });

@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace the current dense three-column CEO workbench with a two-column layout whose center area behaves like the layered stage in `demo.jpg`, defaulting to `CEO层` and switching cleanly into department layers.
+**Goal:** Replace the current dense three-column CEO workbench with a two-column layout whose center area behaves like the layered stage in the wanman.ai reference, defaulting to `CEO层` and switching cleanly into department layers.
 
 **Architecture:** Keep the existing left rail intact, remove the right drawer and bottom command bar from the shell, and replace the React Flow-driven center board with a stage renderer powered by explicit `stageLayers` mock data in the store. Split the new center stage into focused components so the shell, layer switcher, scene layout, and card presentation each have one job.
 
@@ -613,7 +613,7 @@ git commit -m "feat: redesign center stage around layered company views"
 - Department layer switching in place: covered by Task 4 and Task 5.
 - `CEO层` shows current-round progress and department summaries only: covered by Task 1 mock data and Task 2 assertions.
 - Department layers show internal progress and cross-team dependencies only: covered by Task 4 mock data and tests.
-- Lower-density visual stage closer to `demo.jpg`: covered by Task 2 renderer structure and style constraints.
+- Lower-density visual stage closer to the wanman.ai reference: covered by Task 2 renderer structure and style constraints.
 
 ## Placeholder Scan
 

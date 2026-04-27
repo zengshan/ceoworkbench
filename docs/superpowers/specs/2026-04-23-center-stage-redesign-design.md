@@ -5,7 +5,7 @@ Status: Drafted from approved conversation direction
 
 ## Goal
 
-Refactor the current CEO workbench so the main screen follows `demo.jpg` much more closely:
+Refactor the current CEO workbench so the main screen follows the wanman.ai reference much more closely:
 - the left side remains the communication workspace
 - the center becomes the single operational stage
 - the right-side details panel is removed
@@ -50,7 +50,7 @@ Why this approach:
 - it lets the implementation reuse the existing mock-data pattern while replacing only the center presentation model
 
 Alternatives considered:
-- keep React Flow and merely hide some cards: rejected because it still feels like a systems diagram rather than the calm story-board in `demo.jpg`
+- keep React Flow and merely hide some cards: rejected because it still feels like a systems diagram rather than the calm story-board in the wanman.ai reference
 - create fully different layouts per department: rejected because the switching experience would feel fragmented and harder to scan
 
 ## Layout Architecture
@@ -128,7 +128,7 @@ Cards should avoid:
 
 ## Visual Structure
 
-The stage should mimic the feeling of `demo.jpg`:
+The stage should mimic the feeling of the wanman.ai reference:
 - off-white spacious background
 - soft board boundaries
 - lightly rotated or staggered cards where helpful
@@ -273,7 +273,7 @@ Update `tests/e2e/workbench.spec.ts` to verify:
 - `CEO层` only shows current-round progress and department summaries
 - department layers only show internal progress and cross-team dependencies
 - the visual density is noticeably lower than the current dashboard-style board
-- the central experience feels closer to `demo.jpg` than the current React Flow layout
+- the central experience feels closer to the wanman.ai reference than the current React Flow layout
 
 ## Risks and Guardrails
 

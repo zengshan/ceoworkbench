@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the first visible version of the CEO workbench: a Next.js app with a `demo.jpg`-inspired executive workspace containing the left conversation rail, center company canvas, right details drawer, and bottom CEO command bar.
+**Goal:** Build the first visible version of the CEO workbench: a Next.js app with a the wanman.ai reference-inspired executive workspace containing the left conversation rail, center company canvas, right details drawer, and bottom CEO command bar.
 
 **Architecture:** Use a single Next.js App Router application with TypeScript. Keep V1 intentionally local-first: Tailwind for styling, React Flow for the central canvas, Zustand for shared workbench state, and mocked company data stored in a typed feature module so the visual shell, object model, and panel interactions work before login, database, or AI runtime integration.
 

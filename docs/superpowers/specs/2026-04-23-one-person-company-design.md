@@ -9,7 +9,7 @@ This product is not a generic multi-agent chat tool. It is a CEO operating syste
 
 The user acts as the CEO of one or more AI-native companies. Each company exists to pursue one concrete goal. The user does not primarily manage individual agents. Instead, the user manages the company through a general manager, intervenes at key moments, and oversees the company through a live operational workspace.
 
-The target experience should follow the working logic shown in `demo.jpg`:
+The target experience should follow the working logic shown in the wanman.ai reference:
 - a conversation area for executive communication
 - a central company operation canvas showing work in motion
 - a command input area for CEO instructions
@@ -91,7 +91,7 @@ The CEO experience should center on:
 
 ## 4. Main Interface Shape
 
-The main interface should follow the working pattern of `demo.jpg`, not a conventional dashboard.
+The main interface should follow the working pattern of the wanman.ai reference, not a conventional dashboard.
 
 ### 4.1 Left side: conversation rail
 

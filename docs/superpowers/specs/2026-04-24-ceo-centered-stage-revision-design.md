@@ -5,7 +5,7 @@ Status: Drafted from approved visual + terminal feedback
 
 ## Goal
 
-Revise the current center-stage design so it follows `demo.jpg` more closely than the current "single active layer" interpretation.
+Revise the current center-stage design so it follows the wanman.ai reference more closely than the current "single active layer" interpretation.
 
 The main change is structural:
 - the stage is no longer treated as a one-layer-at-a-time board
@@ -37,7 +37,7 @@ This revision follows the visual direction we converged on in discussion:
 - when a department is clicked, shift the viewpoint so that department becomes the main center cluster
 - do not completely remove the CEO from view after focus changes
 
-This is intentionally closer to the "story wall" feel from `demo.jpg` than the current stage.
+This is intentionally closer to the "story wall" feel from the wanman.ai reference than the current stage.
 
 ## Scope
 
@@ -78,7 +78,7 @@ The default view opens with:
 
 This center view should feel like "the company around the CEO," not "the CEO tab."
 
-The surrounding clusters should not collapse to a single status chip. Each department should read as a small card group, more like the distributed piles in `demo.jpg`.
+The surrounding clusters should not collapse to a single status chip. Each department should read as a small card group, more like the distributed piles in the wanman.ai reference.
 
 ## Cluster Composition
 
@@ -233,7 +233,7 @@ They should verify:
 - after focus shift, CEO remains visible as a smaller secondary cluster
 - non-focused departments remain visible in compressed form
 - no persistent extra cluster is introduced for decisions or system metadata
-- the stage feels closer to `demo.jpg` than the current single-layer stage
+- the stage feels closer to the wanman.ai reference than the current single-layer stage
 
 ## Risks and Guardrails
 

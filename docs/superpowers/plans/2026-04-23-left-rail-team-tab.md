@@ -41,7 +41,7 @@
 - [ ] Keep the current conversation view intact under the `对话` tab.
 - [ ] Replace the profile-card team view with department chat-style group blocks.
 - [ ] Show only real departments and their nested agent names, without capability tags or current responsibility content.
-- [ ] Preserve the existing `demo.jpg`-inspired styling so the grouped view feels like the same left-rail system as the conversation view.
+- [ ] Preserve the existing the wanman.ai reference-inspired styling so the grouped view feels like the same left-rail system as the conversation view.
 
 ### Task 4: Verify the feature end-to-end
 

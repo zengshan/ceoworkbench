@@ -250,7 +250,7 @@ function taskSchema() {
       title: { type: 'string' },
       objective: { type: 'string' },
       expectedOutput: { type: 'string' },
-      status: { type: 'string', enum: ['queued', 'running', 'submitted', 'in_review', 'completed', 'blocked', 'failed'] },
+      status: { type: 'string', enum: ['queued', 'running', 'submitted', 'in_review', 'completed', 'blocked', 'failed', 'escalated'] },
       priority: { type: 'number' },
       dependencyTaskIds: { type: 'array', items: { type: 'string' } },
       inputArtifactIds: { type: 'array', items: { type: 'string' } },

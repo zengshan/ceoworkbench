@@ -138,6 +138,11 @@ export class MemoryStorage implements Storage {
     return clone(artifact);
   }
 
+  async updateArtifact(artifact: Artifact) {
+    this.artifacts.set(artifact.id, clone(artifact));
+    return clone(artifact);
+  }
+
   async createMemoryEntry(memoryEntry: MemoryEntry) {
     this.memoryEntries.set(memoryEntry.id, clone(memoryEntry));
     return clone(memoryEntry);

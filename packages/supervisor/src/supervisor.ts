@@ -1,6 +1,9 @@
 import {
   getRunKindForMessage,
   getRunPriority,
+  decideReviewTransition,
+  pickReviewer,
+  validateRevisionSelfReport,
   type Agent,
   type AgentLifecycle,
   type AgentRole,
@@ -8,8 +11,11 @@ import {
   type Clock,
   type IdGenerator,
   type Message,
+  type ReportDocument,
+  type ReviewReport,
   type Run,
   type RunEvent,
+  type Task,
 } from '../../core/src';
 import type { AgentAdapter } from '../../runtime/src';
 import type { AgentDelegationRequest } from '../../runtime/src';
@@ -116,6 +122,11 @@ export class Supervisor {
           artifactId: artifact.id,
           path: artifact.path,
         }, runningRun.id, runningRun.agentId));
+        await this.queueReviewIfRequired(runningRun, artifact);
+      }
+
+      for (const reviewReport of result.reviewReports ?? []) {
+        await this.applyReviewReport(runningRun, reviewReport);
       }
 
       for (const memoryEntry of result.memoryEntries ?? []) {
@@ -201,6 +212,219 @@ export class Supervisor {
     await this.handleMessage(message, agent);
   }
 
+  private async queueReviewIfRequired(sourceRun: Run, artifact: Artifact) {
+    if (!artifact.taskId) {
+      return;
+    }
+
+    const [tasks, agents, runs] = await Promise.all([
+      this.options.storage.listTasks(artifact.companyId),
+      this.options.storage.listAgents(artifact.companyId),
+      this.options.storage.listRuns(artifact.companyId),
+    ]);
+    const task = tasks.find((candidate) => candidate.id === artifact.taskId);
+
+    if (!task?.requiresReview) {
+      return;
+    }
+
+    const assignedAgent = agents.find((agent) => agent.id === task.assignedAgentId);
+
+    if (assignedAgent?.role !== 'worker') {
+      return;
+    }
+
+    if (task.pendingReviewFindings?.length) {
+      const validation = validateRevisionSelfReport({
+        previousFindings: task.pendingReviewFindings,
+        selfReport: artifact.revisionSelfReport ?? { findingResponses: [] },
+      });
+
+      if (!validation.valid) {
+        await this.rejectInvalidRevision(sourceRun, task, artifact, validation);
+        return;
+      }
+    }
+
+    const artifactKind = artifact.kind ?? artifact.artifactType;
+    const result = pickReviewer({
+      artifactId: artifact.id,
+      artifactKind,
+      candidates: agents
+        .filter((agent) => agent.role === 'reviewer')
+        .map((agent) => ({
+          ...agent,
+          reviews: agent.capabilities
+            .filter((capability) => capability.startsWith('review:'))
+            .map((capability) => capability.slice('review:'.length)),
+          activeReviewCount: runs.filter((run) => run.agentId === agent.id && (run.status === 'queued' || run.status === 'running')).length,
+          available: true,
+        })),
+    });
+
+    if (result.type === 'unavailable') {
+      await this.options.storage.appendRunEvent(this.event('agent_event_emitted', artifact.companyId, {
+        eventKind: 'reviewer_unavailable',
+        artifactId: artifact.id,
+        taskId: task.id,
+        artifactKind,
+      }, sourceRun.id, sourceRun.agentId));
+      return;
+    }
+
+    await this.options.storage.updateTask(markTaskInReview(task, artifact.id, this.options.clock.now()));
+
+    const message: Message = {
+      id: this.options.ids.next('message'),
+      companyId: artifact.companyId,
+      agentId: result.reviewerId,
+      author: 'system',
+      kind: 'follow_up',
+      content: [
+        `Review artifact ${artifact.id} for task ${task.id}.`,
+        '',
+        `Artifact kind: ${artifactKind}`,
+        `Reviewer changed: ${result.reviewerChanged ? 'true' : 'false'}`,
+      ].join('\n'),
+      createdAt: this.options.clock.now(),
+    };
+
+    await this.handleMessage(message, agents.find((agent) => agent.id === result.reviewerId)!);
+  }
+
+  private async applyReviewReport(sourceRun: Run, reviewReport: ReviewReport) {
+    const [tasks, artifacts] = await Promise.all([
+      this.options.storage.listTasks(sourceRun.companyId),
+      this.options.storage.listArtifacts(sourceRun.companyId),
+    ]);
+    const task = tasks.find((candidate) => candidate.id === reviewReport.taskId);
+    const artifact = artifacts.find((candidate) => candidate.id === reviewReport.artifactId);
+
+    if (!task || !artifact) {
+      await this.options.storage.appendRunEvent(this.event('agent_event_emitted', sourceRun.companyId, {
+        eventKind: 'review_target_missing',
+        taskId: reviewReport.taskId,
+        artifactId: reviewReport.artifactId,
+      }, sourceRun.id, sourceRun.agentId));
+      return;
+    }
+
+    const report = this.reviewReportDocument(sourceRun, reviewReport);
+    await this.options.storage.createReport(report);
+    await this.options.storage.appendRunEvent(this.event('report_created', sourceRun.companyId, {
+      reportId: report.id,
+      reportType: report.reportType,
+      taskId: reviewReport.taskId,
+      artifactId: reviewReport.artifactId,
+    }, sourceRun.id, sourceRun.agentId));
+
+    const transition = decideReviewTransition(reviewReport);
+    const now = this.options.clock.now();
+
+    if (transition.type === 'complete') {
+      await this.options.storage.updateTask({
+        ...task,
+        status: 'completed',
+        pendingReviewFindings: undefined,
+        updatedAt: now,
+      });
+      await this.options.storage.updateArtifact({ ...artifact, status: 'accepted', updatedAt: now });
+    } else if (transition.type === 'revise') {
+      await this.options.storage.updateTask({
+        ...task,
+        status: 'running',
+        pendingReviewFindings: reviewReport.findings.filter((finding) => finding.mustAddress),
+        updatedAt: now,
+      });
+      await this.options.storage.updateArtifact({ ...artifact, status: 'rejected', updatedAt: now });
+      await this.queueRevisionRun(task, artifact, reviewReport);
+    } else if (transition.type === 'block') {
+      await this.options.storage.updateTask({ ...task, status: 'blocked', updatedAt: now });
+      await this.options.storage.updateArtifact({ ...artifact, status: 'rejected', updatedAt: now });
+    } else if (transition.type === 'second_opinion') {
+      await this.options.storage.appendRunEvent(this.event('agent_event_emitted', sourceRun.companyId, {
+        eventKind: 'second_opinion_required',
+        reason: transition.reason,
+        taskId: task.id,
+        artifactId: artifact.id,
+      }, sourceRun.id, sourceRun.agentId));
+    } else if (transition.type === 'escalate') {
+      await this.options.storage.updateTask({ ...task, status: 'escalated', updatedAt: now });
+      await this.options.storage.appendRunEvent(this.event('agent_event_emitted', sourceRun.companyId, {
+        eventKind: 'review_escalated',
+        reason: transition.reason,
+        taskId: task.id,
+        artifactId: artifact.id,
+        ceoQuestion: reviewReport.ceoQuestion,
+      }, sourceRun.id, sourceRun.agentId));
+    }
+  }
+
+  private async rejectInvalidRevision(
+    sourceRun: Run,
+    task: Task,
+    artifact: Artifact,
+    validation: Exclude<ReturnType<typeof validateRevisionSelfReport>, { valid: true }>,
+  ) {
+    const now = this.options.clock.now();
+    await this.options.storage.updateTask({ ...task, status: 'escalated', updatedAt: now });
+    await this.options.storage.updateArtifact({ ...artifact, status: 'rejected', updatedAt: now });
+
+    for (const reason of validation.failureReasons) {
+      await this.options.storage.appendRunEvent(this.event('agent_event_emitted', artifact.companyId, {
+        eventKind: reason === 'missing_must_address' ? 'silent_must_address_skip' : 'unjustified_skip',
+        taskId: task.id,
+        artifactId: artifact.id,
+        missingFindingIds: validation.missingFindingIds,
+        unreasonedFindingIds: validation.unreasonedFindingIds ?? [],
+      }, sourceRun.id, sourceRun.agentId));
+    }
+  }
+
+  private async queueRevisionRun(task: Task, artifact: Artifact, reviewReport: ReviewReport) {
+    if (!task.assignedAgentId) {
+      await this.options.storage.appendRunEvent(this.event('agent_event_emitted', task.companyId, {
+        eventKind: 'revision_worker_missing',
+        taskId: task.id,
+        artifactId: artifact.id,
+      }));
+      return;
+    }
+
+    const worker = (await this.options.storage.listAgents(task.companyId)).find((agent) => agent.id === task.assignedAgentId);
+
+    if (!worker) {
+      await this.options.storage.appendRunEvent(this.event('agent_event_emitted', task.companyId, {
+        eventKind: 'revision_worker_missing',
+        taskId: task.id,
+        artifactId: artifact.id,
+      }));
+      return;
+    }
+
+    const message: Message = {
+      id: this.options.ids.next('message'),
+      companyId: task.companyId,
+      agentId: worker.id,
+      author: 'system',
+      kind: 'follow_up',
+      content: [
+        `Revision required for artifact ${artifact.id}.`,
+        '',
+        `Task: ${task.id}`,
+        'Must-address findings:',
+        ...reviewReport.findings
+          .filter((finding) => finding.mustAddress)
+          .map((finding) => `- ${finding.id}: ${finding.description}`),
+        '',
+        'Your revision response must include a self-report for every must-address finding.',
+      ].join('\n'),
+      createdAt: this.options.clock.now(),
+    };
+
+    await this.handleMessage(message, worker);
+  }
+
   private async findOrCreateDelegatedAgent(companyId: string, delegation: AgentDelegationRequest, now: string, sourceRun: Run) {
     const existingAgent = (await this.options.storage.listAgents(companyId)).find((agent) => agent.name === delegation.agentName);
 
@@ -242,6 +466,53 @@ export class Supervisor {
       createdAt: this.options.clock.now(),
     };
   }
+
+  private reviewReportDocument(sourceRun: Run, reviewReport: ReviewReport): ReportDocument {
+    return {
+      id: this.options.ids.next('report'),
+      companyId: sourceRun.companyId,
+      title: `Review report for ${reviewReport.artifactId}`,
+      reportType: 'review_report',
+      scope: {
+        type: 'task',
+        id: reviewReport.taskId,
+      },
+      attention: reviewReport.verdict === 'accepted' ? 'completed' : 'notice',
+      timeRange: {
+        from: sourceRun.startedAt ?? sourceRun.queuedAt,
+        to: this.options.clock.now(),
+      },
+      headline: `Reviewer verdict: ${reviewReport.verdict}`,
+      metrics: [
+        {
+          label: 'confidence',
+          value: String(reviewReport.confidence),
+        },
+      ],
+      sections: reviewReport.findings.map((finding) => ({
+        title: `${finding.severity}: ${finding.id}`,
+        body: finding.description,
+        items: finding.suggestedFix ? [finding.suggestedFix] : undefined,
+      })),
+      tables: [
+        {
+          title: 'Acceptance criteria',
+          columns: ['Criterion', 'Met', 'Evidence'],
+          rows: reviewReport.acceptanceCriteriaCheck.map((check) => [
+            check.criterion,
+            check.met ? 'yes' : 'no',
+            check.evidence,
+          ]),
+        },
+      ],
+      linkedTasks: [reviewReport.taskId],
+      linkedArtifacts: [reviewReport.artifactId],
+      linkedRuns: [sourceRun.id],
+      linkedEvents: [],
+      recommendedActions: reviewReport.ceoQuestion ? [reviewReport.ceoQuestion] : [],
+      createdAt: this.options.clock.now(),
+    };
+  }
 }
 
 function normalizeRole(role?: AgentRole) {
@@ -250,4 +521,15 @@ function normalizeRole(role?: AgentRole) {
 
 function normalizeLifecycle(lifecycle?: AgentLifecycle) {
   return lifecycle ?? 'on_demand';
+}
+
+function markTaskInReview(task: Task, artifactId: string, updatedAt: string): Task {
+  return {
+    ...task,
+    status: 'in_review',
+    outputArtifactIds: task.outputArtifactIds.includes(artifactId)
+      ? task.outputArtifactIds
+      : [...task.outputArtifactIds, artifactId],
+    updatedAt,
+  };
 }

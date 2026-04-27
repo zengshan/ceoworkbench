@@ -37,8 +37,28 @@ export type RunEventType =
   | 'run_failed'
   | 'run_cancelled';
 
-export type TaskStatus = 'queued' | 'running' | 'submitted' | 'in_review' | 'completed' | 'blocked' | 'failed';
+export type TaskStatus = 'queued' | 'running' | 'submitted' | 'in_review' | 'completed' | 'blocked' | 'failed' | 'escalated';
 export type ArtifactStatus = 'draft' | 'submitted' | 'reviewed' | 'accepted' | 'rejected' | 'final';
+export type ReviewFindingSeverity = 'blocker' | 'major' | 'minor' | 'nit';
+
+export type ReviewFinding = {
+  id: string;
+  severity: ReviewFindingSeverity;
+  location: string;
+  description: string;
+  suggestedFix?: string;
+  mustAddress: boolean;
+};
+
+export type RevisionFindingResponse = {
+  findingId: string;
+  status: 'addressed' | 'not_addressed';
+  note: string;
+};
+
+export type RevisionSelfReport = {
+  findingResponses: RevisionFindingResponse[];
+};
 
 export type MemoryKind = 'goal' | 'decision' | 'fact' | 'lesson' | 'phase_summary' | 'project_summary';
 
@@ -132,6 +152,7 @@ export type Task = {
   inputArtifactIds: EntityId[];
   outputArtifactIds: EntityId[];
   requiresReview: boolean;
+  pendingReviewFindings?: ReviewFinding[];
   createdAt: ISODateTime;
   updatedAt: ISODateTime;
 };
@@ -145,8 +166,10 @@ export type Artifact = {
   path: string;
   title: string;
   artifactType: string;
+  kind?: string;
   status: ArtifactStatus;
   content?: string;
+  revisionSelfReport?: RevisionSelfReport;
   createdAt: ISODateTime;
   updatedAt: ISODateTime;
 };

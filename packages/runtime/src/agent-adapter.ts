@@ -5,6 +5,7 @@ import type {
   DecisionRequest,
   MemoryEntry,
   Message,
+  ReviewReport,
   Run,
   RunEvent,
   Task,
@@ -37,6 +38,7 @@ export type AgentStepResult = {
   delegations?: AgentDelegationRequest[];
   tasks?: Task[];
   artifacts?: Artifact[];
+  reviewReports?: ReviewReport[];
   memoryEntries?: MemoryEntry[];
   decisionRequests?: DecisionRequest[];
   continuationRequested?: boolean;

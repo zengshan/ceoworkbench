@@ -33,6 +33,7 @@ export type Storage = {
   createTask(task: Task): Promise<Task>;
   updateTask(task: Task): Promise<Task>;
   createArtifact(artifact: Artifact): Promise<Artifact>;
+  updateArtifact(artifact: Artifact): Promise<Artifact>;
   createMemoryEntry(memoryEntry: MemoryEntry): Promise<MemoryEntry>;
   createReport(report: ReportDocument): Promise<ReportDocument>;
   createDecisionRequest(decisionRequest: DecisionRequest): Promise<DecisionRequest>;

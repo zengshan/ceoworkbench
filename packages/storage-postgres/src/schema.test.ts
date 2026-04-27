@@ -25,4 +25,10 @@ describe('Postgres schema', () => {
     expect(INITIAL_SCHEMA_SQL).toContain('payload JSONB');
     expect(INITIAL_SCHEMA_SQL).toContain('metrics JSONB');
   });
+
+  it('persists review protocol state on tasks and artifacts', () => {
+    expect(INITIAL_SCHEMA_SQL).toContain('pending_review_findings JSONB');
+    expect(INITIAL_SCHEMA_SQL).toContain('kind TEXT');
+    expect(INITIAL_SCHEMA_SQL).toContain('revision_self_report JSONB');
+  });
 });

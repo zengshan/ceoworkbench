@@ -175,9 +175,10 @@ export class PostgresStorage implements Storage {
     await this.pool.query(
       `INSERT INTO tasks (
         id, company_id, assigned_agent_id, title, objective, expected_output, status, priority,
-        dependency_task_ids, input_artifact_ids, output_artifact_ids, requires_review, created_at, updated_at
+        dependency_task_ids, input_artifact_ids, output_artifact_ids, requires_review, pending_review_findings,
+        created_at, updated_at
       )
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11::jsonb, $12, $13, $14)`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::jsonb, $10::jsonb, $11::jsonb, $12, $13::jsonb, $14, $15)`,
       [
         task.id,
         task.companyId,
@@ -191,6 +192,7 @@ export class PostgresStorage implements Storage {
         JSON.stringify(task.inputArtifactIds),
         JSON.stringify(task.outputArtifactIds),
         task.requiresReview,
+        task.pendingReviewFindings ? JSON.stringify(task.pendingReviewFindings) : null,
         task.createdAt,
         task.updatedAt,
       ],
@@ -203,7 +205,8 @@ export class PostgresStorage implements Storage {
       `UPDATE tasks
        SET assigned_agent_id = $2, title = $3, objective = $4, expected_output = $5, status = $6,
            priority = $7, dependency_task_ids = $8::jsonb, input_artifact_ids = $9::jsonb,
-           output_artifact_ids = $10::jsonb, requires_review = $11, updated_at = $12
+           output_artifact_ids = $10::jsonb, requires_review = $11, pending_review_findings = $12::jsonb,
+           updated_at = $13
        WHERE id = $1`,
       [
         task.id,
@@ -217,6 +220,7 @@ export class PostgresStorage implements Storage {
         JSON.stringify(task.inputArtifactIds),
         JSON.stringify(task.outputArtifactIds),
         task.requiresReview,
+        task.pendingReviewFindings ? JSON.stringify(task.pendingReviewFindings) : null,
         task.updatedAt,
       ],
     );
@@ -225,8 +229,11 @@ export class PostgresStorage implements Storage {
 
   async createArtifact(artifact: Artifact) {
     await this.pool.query(
-      `INSERT INTO artifacts (id, company_id, run_id, agent_id, task_id, path, title, artifact_type, status, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      `INSERT INTO artifacts (
+        id, company_id, run_id, agent_id, task_id, path, title, artifact_type, kind, status,
+        revision_self_report, created_at, updated_at
+      )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::jsonb, $12, $13)`,
       [
         artifact.id,
         artifact.companyId,
@@ -236,8 +243,34 @@ export class PostgresStorage implements Storage {
         artifact.path,
         artifact.title,
         artifact.artifactType,
+        artifact.kind ?? null,
         artifact.status,
+        artifact.revisionSelfReport ? JSON.stringify(artifact.revisionSelfReport) : null,
         artifact.createdAt,
+        artifact.updatedAt,
+      ],
+    );
+    return artifact;
+  }
+
+  async updateArtifact(artifact: Artifact) {
+    await this.pool.query(
+      `UPDATE artifacts
+       SET run_id = $2, agent_id = $3, task_id = $4, path = $5, title = $6,
+           artifact_type = $7, kind = $8, status = $9, revision_self_report = $10::jsonb,
+           updated_at = $11
+       WHERE id = $1`,
+      [
+        artifact.id,
+        artifact.runId ?? null,
+        artifact.agentId ?? null,
+        artifact.taskId ?? null,
+        artifact.path,
+        artifact.title,
+        artifact.artifactType,
+        artifact.kind ?? null,
+        artifact.status,
+        artifact.revisionSelfReport ? JSON.stringify(artifact.revisionSelfReport) : null,
         artifact.updatedAt,
       ],
     );
@@ -500,6 +533,7 @@ function rowToTask(row: QueryResultRow): Task {
     inputArtifactIds: row.input_artifact_ids ?? [],
     outputArtifactIds: row.output_artifact_ids ?? [],
     requiresReview: row.requires_review,
+    pendingReviewFindings: row.pending_review_findings ?? undefined,
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at),
   };
@@ -515,7 +549,9 @@ function rowToArtifact(row: QueryResultRow): Artifact {
     path: row.path,
     title: row.title,
     artifactType: row.artifact_type,
+    kind: row.kind ?? undefined,
     status: row.status,
+    revisionSelfReport: row.revision_self_report ?? undefined,
     createdAt: toIso(row.created_at),
     updatedAt: toIso(row.updated_at),
   };

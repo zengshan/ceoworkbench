@@ -81,6 +81,7 @@ CREATE TABLE IF NOT EXISTS tasks (
   input_artifact_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
   output_artifact_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
   requires_review BOOLEAN NOT NULL,
+  pending_review_findings JSONB,
   created_at TIMESTAMPTZ NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL
 );
@@ -96,7 +97,9 @@ CREATE TABLE IF NOT EXISTS artifacts (
   path TEXT NOT NULL,
   title TEXT NOT NULL,
   artifact_type TEXT NOT NULL,
+  kind TEXT,
   status TEXT NOT NULL,
+  revision_self_report JSONB,
   created_at TIMESTAMPTZ NOT NULL,
   updated_at TIMESTAMPTZ NOT NULL
 );

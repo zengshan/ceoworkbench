@@ -6,4 +6,5 @@ test-results
 coverage
 pnpm-lock.yaml
 
+.ceoworkbench
 .worktrees

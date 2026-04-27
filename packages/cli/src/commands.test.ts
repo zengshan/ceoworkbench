@@ -1,4 +1,4 @@
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -165,6 +165,25 @@ describe('ceoworkbench CLI commands', () => {
     expect(artifacts).toContain('project-plan.md');
     expect(latestArtifact).toContain('# Project plan draft');
     expect(latestArtifact).toContain('请总经理拆解第一阶段工作');
+  });
+
+  it('queues exact multiline CEO content from a message file', async () => {
+    const runtime = createCliRuntime();
+    const messageRoot = await mkdtemp(path.join(tmpdir(), 'ceoworkbench-message-'));
+    const messagePath = path.join(messageRoot, 'message.txt');
+    const message = 'Line one\nLine "two" with spaces';
+
+    await writeFile(messagePath, message, 'utf8');
+    await runCli(['company', 'init', 'novel', '--goal', 'Publish a novel'], runtime);
+
+    expect(await runCli(['ceo', '--message-file', messagePath], runtime)).toContain('Queued ceo_steer run for manager');
+
+    const messages = await runtime.storage.listMessages('company-000001');
+    expect(messages.at(-1)?.content).toBe(message);
+  });
+
+  it('lists wizard in help output', async () => {
+    expect(await runCli(['help'])).toContain('ceoworkbench wizard');
   });
 
   it('lets the manager auto-staff specialist workers for a historical novel goal', async () => {

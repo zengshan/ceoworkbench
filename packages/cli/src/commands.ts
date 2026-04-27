@@ -1,5 +1,7 @@
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import { createInterface } from 'node:readline/promises';
+import { stdin as input, stdout as output } from 'node:process';
 import {
   RandomIdGenerator,
   SequentialIdGenerator,
@@ -104,6 +106,22 @@ export async function runCli(args: string[], runtime = createCliRuntime()): Prom
     return lines.join('\n');
   }
 
+  if (command === 'wizard') {
+    const { runWizard } = await import('./wizard');
+    const readline = createInterface({ input, output });
+
+    try {
+      return await runWizard(runtime, {
+        sessionRoot: path.join(process.cwd(), '.ceoworkbench', 'wizard-sessions'),
+        prompt: (question) => readline.question(question),
+        runCommand: (wizardArgs) => runCli(wizardArgs, runtime),
+        mode: subcommand === 'resume' ? 'resume' : undefined,
+      });
+    } finally {
+      readline.close();
+    }
+  }
+
   if (command === 'company' && subcommand === 'init') {
     const name = rest[0];
     const goal = readOption(rest, '--goal') ?? `${name} company goal`;
@@ -152,12 +170,14 @@ export async function runCli(args: string[], runtime = createCliRuntime()): Prom
   }
 
   if (command === 'ceo') {
-    const content = [subcommand, ...rest].filter(Boolean).join(' ');
+    const content = subcommand === '--message-file'
+      ? await readFileFromOption(rest[0], 'Usage: ceoworkbench ceo --message-file <path>')
+      : [subcommand, ...rest].filter(Boolean).join(' ');
     const company = await requireCurrentCompany(runtime.storage);
     const manager = await requireManager(runtime.storage, company.id);
 
     if (!content) {
-      throw new Error('Usage: ceoworkbench ceo <message>');
+      throw new Error('Usage: ceoworkbench ceo <message> | ceoworkbench ceo --message-file <path>');
     }
 
     return queueCeoMessage(runtime, company, manager, content, 'steer');
@@ -301,10 +321,13 @@ function help() {
     'ceoworkbench init',
     'ceoworkbench db migrate',
     'ceoworkbench demo',
+    'ceoworkbench wizard',
+    'ceoworkbench wizard resume',
     'ceoworkbench company init <name> --goal <goal>',
     'ceoworkbench company create <name> --goal <goal>',
     'ceoworkbench agent create <name> --role manager',
     'ceoworkbench ceo <message>',
+    'ceoworkbench ceo --message-file <path>',
     'ceoworkbench send <agent> <message>',
     'ceoworkbench work [--until-idle] [--ticks <count>]',
     'ceoworkbench start [--once] [--max-ticks <count>]',
@@ -398,6 +421,14 @@ function createDefaultStorage(env: NodeJS.ProcessEnv | Record<string, string | u
 
 function getWorkspaceRoot(env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env) {
   return env.CEOWORKBENCH_WORKSPACE_ROOT ?? path.join(process.cwd(), '.ceoworkbench', 'workspaces');
+}
+
+async function readFileFromOption(filePath: string | undefined, usage: string) {
+  if (!filePath) {
+    throw new Error(usage);
+  }
+
+  return readFile(filePath, 'utf8');
 }
 
 function createArtifactWriter(storage: RuntimeStorage) {

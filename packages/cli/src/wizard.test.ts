@@ -48,10 +48,13 @@ describe('ceoworkbench wizard', () => {
     expect(prompts.join('\n')).not.toMatch(/start|initialize|default|enable/i);
     expect(runCommand).toHaveBeenCalledWith(['company', 'init', 'novel', '--goal', 'Publish a novel']);
     expect(runCommand).toHaveBeenCalledWith(['ceo', 'Draft the first plan']);
+    expect(runCommand).toHaveBeenCalledWith(['work']);
     expect(output).toContain('Wizard executed:');
+    expect(output).toContain('work');
     expect(output).toContain('Equivalent commands:');
     expect(output).toContain('npm run ceoworkbench -- company init novel --goal');
     expect(output).toContain('npm run ceoworkbench -- ceo');
+    expect(output).toContain('npm run ceoworkbench -- work');
   });
 
   it('prints equivalent commands that can run through the CLI command runner', async () => {
@@ -76,6 +79,87 @@ describe('ceoworkbench wizard', () => {
     expect(output).toContain('Equivalent commands:');
     expect(output).toContain('npm run ceoworkbench -- company init novel --goal');
     expect(output).toContain('npm run ceoworkbench -- ceo');
+    expect(output).toContain('npm run ceoworkbench -- work');
+  });
+
+  it('automatically processes queued work after collecting a CEO instruction', async () => {
+    const runtime = createFakeCliRuntime();
+    const sessionRoot = await mkdtemp(path.join(tmpdir(), 'ceoworkbench-wizard-'));
+    const progress: string[] = [];
+
+    const output = await runWizard(runtime, {
+      sessionRoot,
+      idGenerator: () => 'session-auto-work',
+      prompt: async (question) => {
+        if (question.includes('name')) {
+          return 'novel';
+        }
+        if (question.includes('goal')) {
+          return 'Publish a novel';
+        }
+        return 'Draft the first plan';
+      },
+      mode: 'bootstrap',
+      onProgress: (line) => progress.push(line),
+    });
+    const runs = await runtime.storage.listRuns('company-000001');
+
+    expect(output).toContain('work');
+    expect(output).toContain('Processed 1 run.');
+    expect(progress.some((line) => line.includes('[work] start') && line.includes('manager'))).toBe(true);
+    expect(progress.some((line) => line.includes('[work] waiting for agent output'))).toBe(true);
+    expect(progress.some((line) => line.includes('[work] finished'))).toBe(true);
+    expect(runs.filter((run) => run.status === 'queued')).toHaveLength(0);
+    expect(runs.filter((run) => run.status === 'completed')).toHaveLength(1);
+  });
+
+  it('shows newly produced artifact titles when verbose output is requested', async () => {
+    const runtime = createFakeCliRuntime();
+    const sessionRoot = await mkdtemp(path.join(tmpdir(), 'ceoworkbench-wizard-'));
+
+    const output = await runWizard(runtime, {
+      sessionRoot,
+      idGenerator: () => 'session-verbose',
+      prompt: async (question) => {
+        if (question.includes('name')) {
+          return 'novel';
+        }
+        if (question.includes('goal')) {
+          return 'Publish a novel';
+        }
+        return 'Draft the first plan';
+      },
+      mode: 'bootstrap',
+      verbose: true,
+    });
+
+    expect(output).toContain('Artifacts produced:');
+    expect(output).toContain('Project plan draft');
+    expect(output).toContain('project-plan.md');
+    expect(output).toContain('submitted');
+  });
+
+  it('does not show artifact titles in default wizard output', async () => {
+    const runtime = createFakeCliRuntime();
+    const sessionRoot = await mkdtemp(path.join(tmpdir(), 'ceoworkbench-wizard-'));
+
+    const output = await runWizard(runtime, {
+      sessionRoot,
+      idGenerator: () => 'session-default-output',
+      prompt: async (question) => {
+        if (question.includes('name')) {
+          return 'novel';
+        }
+        if (question.includes('goal')) {
+          return 'Publish a novel';
+        }
+        return 'Draft the first plan';
+      },
+      mode: 'bootstrap',
+    });
+
+    expect(output).not.toContain('Artifacts produced:');
+    expect(output).toContain('Wizard executed:');
   });
 
   it('uses message files for complex CEO messages in equivalent commands', async () => {
@@ -186,6 +270,7 @@ describe('ceoworkbench wizard', () => {
     const runs = await runtime.storage.listRuns('company-000001');
     expect(runs).toHaveLength(1);
     expect(runs[0].kind).toBe('ceo_steer');
+    expect(runs[0].status).toBe('completed');
   });
 
   it('replays company init from an executed checkpoint when runtime state is empty', async () => {

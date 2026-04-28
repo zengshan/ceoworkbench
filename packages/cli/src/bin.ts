@@ -4,7 +4,9 @@ let runtime: ReturnType<typeof createCliRuntime> | undefined;
 
 (async () => {
   runtime = createCliRuntime();
-  return runCli(process.argv.slice(2), runtime);
+  return runCli(process.argv.slice(2), runtime, {
+    onProgress: (line) => process.stdout.write(`${line}\n`),
+  });
 })()
   .then((output) => {
     process.stdout.write(`${output}\n`);

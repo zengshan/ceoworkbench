@@ -16,6 +16,8 @@ import {
   type IdGenerator,
   type Message,
   type MessageKind,
+  type Run,
+  type RunEvent,
 } from '../../core/src';
 import { buildArtifactReport, buildBriefingReport, buildDecisionReport, buildRunSummaryReport, buildStatusReport, buildTimelineReport, renderMarkdownReport, renderTerminalReport } from '../../reporter/src';
 import { FakeManagerAdapter, SandboxedJsonAgentAdapter, type AgentAdapter, type AgentContext } from '../../runtime/src';
@@ -37,6 +39,10 @@ export type CliRuntime = {
   supervisor: Supervisor;
   workspaceRoot: string;
   close?: () => Promise<void>;
+};
+
+export type RunCliOptions = {
+  onProgress?: (line: string) => void;
 };
 
 export type RuntimeStorage = Storage & {
@@ -71,7 +77,7 @@ export function createCliRuntime(storage?: RuntimeStorage, options: CliRuntimeOp
   };
 }
 
-export async function runCli(args: string[], runtime = createCliRuntime()): Promise<string> {
+export async function runCli(args: string[], runtime = createCliRuntime(), options: RunCliOptions = {}): Promise<string> {
   const [command, subcommand, ...rest] = args;
 
   if (!command || command === 'help') {
@@ -114,12 +120,15 @@ export async function runCli(args: string[], runtime = createCliRuntime()): Prom
   if (command === 'wizard') {
     const { runWizard } = await import('./wizard');
     const readline = createInterface({ input, output });
+    const wizardArgs = [subcommand, ...rest].filter(Boolean);
 
     try {
       return await runWizard(runtime, {
         sessionRoot: path.join(process.cwd(), '.ceoworkbench', 'wizard-sessions'),
         prompt: (question) => readline.question(question),
-        runCommand: (wizardArgs) => runCli(wizardArgs, runtime),
+        runCommand: (wizardArgs) => runCli(wizardArgs, runtime, options),
+        onProgress: options.onProgress,
+        verbose: wizardArgs.includes('--verbose'),
         mode: subcommand === 'resume' ? 'resume' : undefined,
       });
     } finally {
@@ -204,15 +213,16 @@ export async function runCli(args: string[], runtime = createCliRuntime()): Prom
 
   if (command === 'work') {
     const company = await requireCurrentCompany(runtime.storage);
-    const untilIdle = [subcommand, ...rest].includes('--until-idle');
-    const ticks = Number(readOption([subcommand, ...rest].filter(Boolean), '--ticks') ?? (untilIdle ? 100 : 1));
+    const workArgs = [subcommand, ...rest].filter(Boolean);
+    const once = workArgs.includes('--once');
+    const ticks = Number(readOption(workArgs, '--ticks') ?? (once ? 1 : 100));
 
     if (!Number.isInteger(ticks) || ticks < 1) {
-      throw new Error('Usage: ceoworkbench work [--until-idle] [--ticks <count>]');
+      throw new Error('Usage: ceoworkbench work [--once] [--until-idle] [--ticks <count>]');
     }
 
-    const processed = await processRuns(runtime, company.id, ticks);
-    return processed === 0 ? 'No queued runs.' : `Processed ${processed} runs.`;
+    const processed = await processRuns(runtime, company.id, ticks, options.onProgress);
+    return summarizeProcessedRuns(processed);
   }
 
   if (command === 'start') {
@@ -224,7 +234,7 @@ export async function runCli(args: string[], runtime = createCliRuntime()): Prom
     }
 
     if (maxTicks > 1) {
-      const processed = await processRuns(runtime, company.id, maxTicks);
+      const processed = await processRuns(runtime, company.id, maxTicks, options.onProgress);
 
       return processed === 0 ? 'No queued runs.' : `Processed ${processed} runs.`;
     }
@@ -327,14 +337,15 @@ function help() {
     'ceoworkbench db migrate',
     'ceoworkbench demo',
     'ceoworkbench wizard',
-    'ceoworkbench wizard resume',
+    'ceoworkbench wizard [--verbose]',
+    'ceoworkbench wizard resume [--verbose]',
     'ceoworkbench company init <name> --goal <goal>',
     'ceoworkbench company create <name> --goal <goal>',
     'ceoworkbench agent create <name> --role manager',
     'ceoworkbench ceo <message>',
     'ceoworkbench ceo --message-file <path>',
     'ceoworkbench send <agent> <message>',
-    'ceoworkbench work [--until-idle] [--ticks <count>]',
+    'ceoworkbench work [--once] [--until-idle] [--ticks <count>]',
     'ceoworkbench start [--once] [--max-ticks <count>]',
     'ceoworkbench watch',
     'ceoworkbench status',
@@ -398,10 +409,25 @@ async function queueCeoMessage(runtime: CliRuntime, company: Company, agent: Age
   return `Queued ${runKind} run for ${agent.name} at priority ${getRunPriority(runKind)}.`;
 }
 
-async function processRuns(runtime: CliRuntime, companyId: string, ticks: number) {
+async function processRuns(runtime: CliRuntime, companyId: string, ticks: number, onProgress?: (line: string) => void) {
   let processed = 0;
 
   for (let tick = 0; tick < ticks; tick += 1) {
+    const nextRun = (await runtime.storage.listRuns(companyId)).find((run) => run.status === 'queued');
+
+    if (!nextRun) {
+      break;
+    }
+
+    const [agents, beforeEvents] = await Promise.all([
+      runtime.storage.listAgents(companyId),
+      runtime.storage.listEvents(companyId),
+    ]);
+    const beforeEventIds = new Set(beforeEvents.map((event) => event.id));
+    const agent = agents.find((candidate) => candidate.id === nextRun.agentId);
+    onProgress?.(`[work] start ${formatRunLabel(nextRun, agent)}`);
+    onProgress?.(`[work] waiting for agent output...`);
+
     const run = await runtime.supervisor.tick(companyId);
 
     if (!run) {
@@ -409,9 +435,76 @@ async function processRuns(runtime: CliRuntime, companyId: string, ticks: number
     }
 
     processed += 1;
+    const [afterRuns, afterEvents] = await Promise.all([
+      runtime.storage.listRuns(companyId),
+      runtime.storage.listEvents(companyId),
+    ]);
+    const completedRun = afterRuns.find((candidate) => candidate.id === run.id) ?? run;
+    const queued = afterRuns.filter((candidate) => candidate.status === 'queued').length;
+    const newEvents = afterEvents.filter((event) => !beforeEventIds.has(event.id) && event.runId === run.id);
+
+    for (const line of summarizeRunEvents(newEvents, agent)) {
+      onProgress?.(`[work] ${line}`);
+    }
+
+    onProgress?.(`[work] finished ${formatRunLabel(completedRun, agent)} -> ${completedRun.status}; queued=${queued}`);
   }
 
   return processed;
+}
+
+function summarizeProcessedRuns(processed: number) {
+  return processed === 0
+    ? 'No queued runs.'
+    : `Processed ${processed} ${processed === 1 ? 'run' : 'runs'}.`;
+}
+
+function formatRunLabel(run: Run, agent?: Agent) {
+  const agentLabel = agent ? `${agent.name} (${agent.role})` : run.agentId;
+  return `${run.id} for ${agentLabel}`;
+}
+
+function summarizeRunEvents(events: RunEvent[], agent?: Agent) {
+  const agentName = agent?.name ?? 'agent';
+  const lines: string[] = [];
+
+  for (const event of events) {
+    switch (event.type) {
+      case 'agent_event_emitted': {
+        const text = event.payload.text ?? event.payload.message;
+
+        if (typeof text === 'string' && text.trim()) {
+          lines.push(`${agentName}: ${singleLine(text)}`);
+        }
+        break;
+      }
+      case 'task_created':
+        lines.push(`${agentName} created task: ${event.payload.title ?? event.payload.taskId ?? 'untitled'}`);
+        break;
+      case 'agent_created':
+        lines.push(`${agentName} created ${event.payload.role === 'reviewer' ? 'reviewer' : 'worker'}: ${event.payload.name ?? event.payload.agentId ?? 'unnamed'}`);
+        break;
+      case 'artifact_created':
+        lines.push(`${agentName} created artifact: ${event.payload.path ?? event.payload.artifactId ?? 'unnamed'}`);
+        break;
+      case 'report_created':
+        lines.push(`${agentName} created review report: ${event.payload.title ?? event.payload.reportId ?? 'untitled'}`);
+        break;
+      case 'decision_required':
+        lines.push(`${agentName} requested CEO decision: ${event.payload.title ?? event.payload.decisionRequestId ?? 'untitled'}`);
+        break;
+      case 'run_failed':
+        lines.push(`${agentName} failed: ${event.payload.errorMessage ?? 'unknown error'}`);
+        break;
+    }
+  }
+
+  return lines;
+}
+
+function singleLine(value: string) {
+  const compact = value.replace(/\s+/g, ' ').trim();
+  return compact.length > 240 ? `${compact.slice(0, 237)}...` : compact;
 }
 
 function createDefaultStorage(env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env): RuntimeStorage {

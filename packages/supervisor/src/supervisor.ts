@@ -149,6 +149,10 @@ export class Supervisor {
         }, runningRun.id, runningRun.agentId));
       }
 
+      if (this.shouldRetryStructuredOutput(result, context.messages.at(-1))) {
+        await this.queueStructuredOutputRetry(runningRun, context.messages.at(-1), result.artifacts?.at(-1));
+      }
+
       if (result.blocked) {
         const finishedAt = this.options.clock.now();
         await this.options.storage.blockRun(runningRun.id, 'Run blocked by decision request', finishedAt);
@@ -229,11 +233,55 @@ export class Supervisor {
     return true;
   }
 
-  private async attachArtifactToReviewTask(sourceRun: Run, artifact: Artifact) {
-    if (artifact.taskId) {
-      return artifact;
+  private shouldRetryStructuredOutput(result: Awaited<ReturnType<AgentAdapter['runStep']>>, sourceMessage?: Message) {
+    if (!result.structuredOutputFallback) {
+      return false;
     }
 
+    if (sourceMessage?.content.includes('STRUCTURED_OUTPUT_RETRY')) {
+      return false;
+    }
+
+    return !(
+      result.delegations?.length
+      || result.tasks?.length
+      || result.reviewReports?.length
+      || result.decisionRequests?.length
+    );
+  }
+
+  private async queueStructuredOutputRetry(sourceRun: Run, sourceMessage?: Message, artifact?: Artifact) {
+    const agent = (await this.options.storage.listAgents(sourceRun.companyId))
+      .find((candidate) => candidate.id === sourceRun.agentId);
+    const message: Message = {
+      id: this.options.ids.next('message'),
+      companyId: sourceRun.companyId,
+      agentId: sourceRun.agentId,
+      author: 'system',
+      kind: 'follow_up',
+      content: [
+        'STRUCTURED_OUTPUT_RETRY',
+        'Your previous response was narrative text and did not create structured CEO Workbench work.',
+        'Read the previous message, company memory, and the saved narrative artifact, then return only a valid JSON AgentStepResult.',
+        'Managers must create tasks and delegations for concrete next work. Workers must create artifacts. Reviewers must create reviewReports.',
+        artifact ? `Narrative artifact to convert: ${artifact.id} (${artifact.path})` : undefined,
+      ].filter(Boolean).join('\n'),
+      createdAt: this.options.clock.now(),
+    };
+
+    await this.options.storage.appendRunEvent(this.event('agent_event_emitted', sourceRun.companyId, {
+      eventKind: 'structured_output_retry_queued',
+      text: 'Agent returned narrative output without structured work; queued a structured-output retry.',
+      sourceRunId: sourceRun.id,
+      artifactId: artifact?.id,
+    }, sourceRun.id, sourceRun.agentId));
+
+    if (agent) {
+      await this.handleMessage(message, agent);
+    }
+  }
+
+  private async attachArtifactToReviewTask(sourceRun: Run, artifact: Artifact) {
     const [agents, tasks] = await Promise.all([
       this.options.storage.listAgents(artifact.companyId),
       this.options.storage.listTasks(artifact.companyId),
@@ -241,6 +289,14 @@ export class Supervisor {
     const agent = agents.find((candidate) => candidate.id === sourceRun.agentId);
 
     if (agent?.role !== 'worker') {
+      return artifact;
+    }
+
+    const artifactTask = artifact.taskId
+      ? tasks.find((candidate) => candidate.id === artifact.taskId)
+      : undefined;
+
+    if (artifactTask?.assignedAgentId === sourceRun.agentId) {
       return artifact;
     }
 

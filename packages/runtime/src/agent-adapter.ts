@@ -42,6 +42,7 @@ export type AgentStepResult = {
   memoryEntries?: MemoryEntry[];
   decisionRequests?: DecisionRequest[];
   continuationRequested?: boolean;
+  structuredOutputFallback?: boolean;
   blocked?: boolean;
 };
 

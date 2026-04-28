@@ -141,6 +141,43 @@ describe('ceoworkbench CLI commands', () => {
     expect(runs.filter((run) => run.status === 'completed')).toHaveLength(2);
   });
 
+  it('runs work until idle by default and streams execution progress', async () => {
+    const runtime = createFakeCliRuntime();
+    const progress: string[] = [];
+
+    await runCli(['company', 'init', 'historical-novel', '--goal', '创作一部历史小说'], runtime);
+    await runCli(['ceo', '我要创作一部历史小说'], runtime);
+
+    const output = await runCli(['work'], runtime, { onProgress: (line) => progress.push(line) });
+    const runs = await runtime.storage.listRuns('company-000001');
+
+    expect(output).toContain('Processed 9 runs.');
+    expect(progress.some((line) => line.includes('[work] start') && line.includes('manager'))).toBe(true);
+    expect(progress.some((line) => line.includes('[work] waiting for agent output'))).toBe(true);
+    expect(progress.some((line) => line.includes('Manager acknowledged the CEO steer'))).toBe(true);
+    expect(progress.some((line) => line.includes('created task: Draft project decomposition'))).toBe(true);
+    expect(progress.some((line) => line.includes('created artifact: artifacts/'))).toBe(true);
+    expect(progress.some((line) => line.includes('created review report:'))).toBe(true);
+    expect(progress.some((line) => line.includes('[work] finished'))).toBe(true);
+    expect(runs.filter((run) => run.status === 'queued')).toHaveLength(0);
+  });
+
+  it('keeps single-run work available behind an explicit once flag', async () => {
+    const runtime = createFakeCliRuntime();
+
+    await runCli(['company', 'create', 'novel', '--goal', 'Publish a novel'], runtime);
+    await runCli(['agent', 'create', 'manager', '--role', 'manager'], runtime);
+    await runCli(['send', 'manager', '第一轮拆解'], runtime);
+    await runCli(['send', 'manager', '第二轮拆解'], runtime);
+
+    const output = await runCli(['work', '--once'], runtime);
+    const runs = await runtime.storage.listRuns('company-000001');
+
+    expect(output).toContain('Processed 1 run.');
+    expect(runs.filter((run) => run.status === 'completed')).toHaveLength(1);
+    expect(runs.filter((run) => run.status === 'queued')).toHaveLength(1);
+  });
+
   it('can run the CLI through the sandbox-json adapter protocol', async () => {
     const sandboxRoot = await mkdtemp(path.join(tmpdir(), 'ceoworkbench-sandbox-'));
     const inputs: SandboxRunInput[] = [];
@@ -234,7 +271,7 @@ describe('ceoworkbench CLI commands', () => {
 
     expect(await runCli(['company', 'init', 'novel', '--goal', '完成一部 12 万字科幻小说出版包'], runtime)).toContain('Initialized company novel');
     expect(await runCli(['ceo', '请总经理拆解第一阶段工作'], runtime)).toContain('Queued ceo_steer run for manager');
-    expect(await runCli(['work', '--until-idle'], runtime)).toContain('Processed 1 runs.');
+    expect(await runCli(['work', '--until-idle'], runtime)).toContain('Processed 1 run.');
 
     const briefing = await runCli(['briefing'], runtime);
     const artifacts = await runCli(['artifact', 'list'], runtime);

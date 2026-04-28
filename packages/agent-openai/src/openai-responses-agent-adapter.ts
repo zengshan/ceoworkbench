@@ -517,6 +517,7 @@ function wrapNarrativeOutput(context: AgentContext, outputText: string): AgentSt
         createdAt: now,
       },
     ],
+    structuredOutputFallback: true,
     blocked: false,
   };
 }

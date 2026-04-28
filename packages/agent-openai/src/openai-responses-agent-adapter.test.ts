@@ -216,6 +216,7 @@ describe('OpenAIResponsesAgentAdapter', () => {
       path: `artifacts/${context.run.id}/agent-output.md`,
       content: '可以，我会拆解历史小说项目。',
     });
+    expect(result.structuredOutputFallback).toBe(true);
     expect(result.blocked).toBe(false);
   });
 

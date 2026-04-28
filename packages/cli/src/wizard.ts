@@ -1,5 +1,6 @@
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
+import type { Artifact } from '../../core/src';
 import type { CliRuntime } from './commands';
 import { runCli } from './commands';
 
@@ -12,6 +13,8 @@ export type WizardOptions = {
   prompt: (question: string) => Promise<string>;
   idGenerator?: () => string;
   runCommand?: (args: string[]) => Promise<string>;
+  onProgress?: (line: string) => void;
+  verbose?: boolean;
   mode?: WizardMode;
   stopAfterCheckpoint?: boolean;
   schemaVersionOverride?: number;
@@ -53,6 +56,11 @@ type WizardExecutedAction =
       message: string;
       args: string[];
       messageFile?: string;
+    }
+  | {
+      kind: 'work';
+      args: string[];
+      output: string;
     };
 
 export async function runWizard(runtime: CliRuntime, options: WizardOptions): Promise<string> {
@@ -132,9 +140,10 @@ async function executeSession(runtime: CliRuntime, options: WizardOptions, sessi
     throw new Error(`Unsupported wizard session schema_version ${session.schema_version}`);
   }
 
-  const runCommand = options.runCommand ?? ((args: string[]) => runCli(args, runtime));
+  const runCommand = options.runCommand ?? ((args: string[]) => runCli(args, runtime, { onProgress: options.onProgress }));
   const actions: WizardExecutedAction[] = [...session.executed];
   const params = session.next_step.params_collected;
+  const beforeArtifactIds = new Set((await listCurrentArtifacts(runtime)).map((artifact) => artifact.id));
 
   if (params.companyName && params.goal && !await hasInitializedCompany(runtime, params.companyName, actions)) {
     const args = ['company', 'init', params.companyName, '--goal', params.goal];
@@ -160,13 +169,27 @@ async function executeSession(runtime: CliRuntime, options: WizardOptions, sessi
         await runCommand(action.args);
         actions.push(action);
       }
+
+      if (!actions.some((action) => action.kind === 'work')) {
+        const args = ['work'];
+        const output = await runCommand(args);
+        actions.push({
+          kind: 'work',
+          args,
+          output,
+        });
+      }
     }
   }
 
   session.executed = actions;
   await saveSession(options.sessionRoot, session);
 
-  return renderSummary(actions);
+  const artifacts = options.verbose
+    ? (await listCurrentArtifacts(runtime)).filter((artifact) => !beforeArtifactIds.has(artifact.id))
+    : [];
+
+  return renderSummary(actions, artifacts);
 }
 
 async function hasInitializedCompany(runtime: CliRuntime, companyName: string, actions: WizardExecutedAction[]) {
@@ -231,19 +254,38 @@ function sessionPath(sessionRoot: string, sessionId: string) {
   return path.join(sessionRoot, `${sessionId}.json`);
 }
 
-function renderSummary(actions: WizardExecutedAction[]) {
-  return [
+async function listCurrentArtifacts(runtime: CliRuntime) {
+  const company = (await runtime.storage.listCompanies())[0];
+  return company ? runtime.storage.listArtifacts(company.id) : [];
+}
+
+function renderSummary(actions: WizardExecutedAction[], artifacts: Artifact[] = []) {
+  const lines = [
     'Wizard executed:',
     ...actions.map((action) => `  - ${renderAction(action)}`),
     '',
     'Equivalent commands:',
     ...actions.map((action) => `  npm run ceoworkbench -- ${action.args.map(shellQuote).join(' ')}`),
-  ].join('\n');
+  ];
+
+  if (artifacts.length > 0) {
+    lines.push(
+      '',
+      'Artifacts produced:',
+      ...artifacts.map((artifact) => `  - ${artifact.title} (${artifact.path}, status: ${artifact.status})`),
+    );
+  }
+
+  return lines.join('\n');
 }
 
 function renderAction(action: WizardExecutedAction) {
   if (action.kind === 'company.init') {
     return `company.init name=${JSON.stringify(action.companyName)} goal=${JSON.stringify(action.goal)}`;
+  }
+
+  if (action.kind === 'work') {
+    return `work result=${JSON.stringify(action.output)}`;
   }
 
   return action.messageFile

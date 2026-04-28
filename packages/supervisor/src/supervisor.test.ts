@@ -288,6 +288,77 @@ describe('Supervisor', () => {
     });
   });
 
+  it('queues a structured-output retry when an agent returns only narrative fallback output', async () => {
+    const storage = new MemoryStorage();
+    await storage.createCompany(company);
+    await storage.createAgent(manager);
+    const adapter: AgentAdapter = {
+      async runStep(context) {
+        return {
+          events: [],
+          artifacts: [
+            {
+              id: 'artifact-narrative',
+              companyId: company.id,
+              runId: context.run.id,
+              agentId: manager.id,
+              path: `artifacts/${context.run.id}/agent-output.md`,
+              title: 'Agent output',
+              artifactType: 'markdown',
+              status: 'submitted',
+              content: '我会开始推进，但这里没有结构化任务。',
+              createdAt: '2026-04-25T00:00:00.000Z',
+              updatedAt: '2026-04-25T00:00:00.000Z',
+            },
+          ],
+          structuredOutputFallback: true,
+          blocked: false,
+        };
+      },
+    };
+    const supervisor = new Supervisor({
+      storage,
+      adapter,
+      clock,
+      ids: new SequentialIdGenerator(),
+      leaseOwner: 'test-worker',
+    });
+    const message: Message = {
+      id: 'message-1',
+      companyId: company.id,
+      agentId: manager.id,
+      author: 'ceo',
+      kind: 'steer',
+      content: '开始推进工作',
+      createdAt: '2026-04-25T00:00:00.000Z',
+    };
+
+    await supervisor.handleMessage(message, manager);
+    await supervisor.tick(company.id);
+
+    const runs = await storage.listRuns(company.id);
+    const messages = await storage.listMessages(company.id);
+    const events = await storage.listEvents(company.id);
+
+    expect(runs).toHaveLength(2);
+    expect(runs[0]).toMatchObject({ status: 'completed' });
+    expect(runs[1]).toMatchObject({
+      agentId: manager.id,
+      kind: 'continuation',
+      status: 'queued',
+    });
+    expect(messages.at(-1)).toMatchObject({
+      agentId: manager.id,
+      author: 'system',
+      kind: 'follow_up',
+      content: expect.stringContaining('STRUCTURED_OUTPUT_RETRY'),
+    });
+    expect(events.some((event) => (
+      event.type === 'agent_event_emitted'
+      && event.payload.eventKind === 'structured_output_retry_queued'
+    ))).toBe(true);
+  });
+
   it('queues an independent reviewer run when a worker submits an artifact that requires review', async () => {
     const storage = new MemoryStorage();
     await storage.createCompany(company);
@@ -467,6 +538,102 @@ describe('Supervisor', () => {
       agentId: reviewerAgent?.id,
       kind: 'continuation',
       status: 'queued',
+    });
+  });
+
+  it('reattaches a worker artifact to the current worker task when the model returns another task id', async () => {
+    const storage = new MemoryStorage();
+    await storage.createCompany(company);
+    await storage.createAgent(worker);
+    await storage.createTask({
+      id: 'task-worker-output',
+      companyId: company.id,
+      assignedAgentId: worker.id,
+      title: 'Story architecture',
+      objective: 'Produce story architecture.',
+      expectedOutput: 'A reviewable story architecture artifact.',
+      status: 'running',
+      priority: 50,
+      dependencyTaskIds: [],
+      inputArtifactIds: [],
+      outputArtifactIds: [],
+      requiresReview: true,
+      createdAt: '2026-04-25T00:00:00.000Z',
+      updatedAt: '2026-04-25T00:00:00.000Z',
+    });
+    await storage.createTask({
+      id: 'task-reviewer-output',
+      companyId: company.id,
+      assignedAgentId: reviewer.id,
+      title: 'Review story architecture',
+      objective: 'Review story architecture.',
+      expectedOutput: 'A review report.',
+      status: 'running',
+      priority: 50,
+      dependencyTaskIds: [],
+      inputArtifactIds: [],
+      outputArtifactIds: [],
+      requiresReview: false,
+      createdAt: '2026-04-25T00:00:00.000Z',
+      updatedAt: '2026-04-25T00:00:00.000Z',
+    });
+    const adapter: AgentAdapter = {
+      async runStep(context) {
+        return {
+          events: [],
+          artifacts: [
+            {
+              id: 'artifact-worker-output',
+              companyId: company.id,
+              runId: context.run.id,
+              agentId: worker.id,
+              taskId: 'task-reviewer-output',
+              path: 'artifacts/story.md',
+              title: 'Story architecture',
+              artifactType: 'markdown',
+              status: 'submitted',
+              content: 'Story architecture body.',
+              createdAt: '2026-04-25T00:00:00.000Z',
+              updatedAt: '2026-04-25T00:00:00.000Z',
+            },
+          ],
+        };
+      },
+    };
+    const supervisor = new Supervisor({
+      storage,
+      adapter,
+      clock,
+      ids: new SequentialIdGenerator(),
+      leaseOwner: 'test-worker',
+    });
+    const message: Message = {
+      id: 'message-worker',
+      companyId: company.id,
+      agentId: worker.id,
+      author: 'system',
+      kind: 'follow_up',
+      content: 'Submit story architecture.',
+      createdAt: '2026-04-25T00:00:00.000Z',
+    };
+
+    await supervisor.handleMessage(message, worker);
+    await supervisor.tick(company.id);
+
+    const tasks = await storage.listTasks(company.id);
+    const artifacts = await storage.listArtifacts(company.id);
+
+    expect(artifacts[0]).toMatchObject({
+      id: 'artifact-worker-output',
+      taskId: 'task-worker-output',
+    });
+    expect(tasks.find((task) => task.id === 'task-worker-output')).toMatchObject({
+      status: 'in_review',
+      outputArtifactIds: ['artifact-worker-output'],
+    });
+    expect(tasks.find((task) => task.id === 'task-reviewer-output')).toMatchObject({
+      status: 'running',
+      outputArtifactIds: [],
     });
   });
 

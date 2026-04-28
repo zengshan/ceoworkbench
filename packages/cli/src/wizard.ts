@@ -88,12 +88,15 @@ export async function runWizard(runtime: CliRuntime, options: WizardOptions): Pr
 
   const companyName = await options.prompt('Company name: ');
   const goal = await options.prompt('Company goal: ');
+  const message = options.stopAfterCheckpoint
+    ? undefined
+    : await options.prompt('What should the CEO tell the manager? ');
   const session: WizardSession = {
     schema_version: options.schemaVersionOverride ?? WIZARD_SCHEMA_VERSION,
     session_id: sessionId,
     next_step: {
       kind: 'ceo_instruction',
-      params_collected: { companyName, goal },
+      params_collected: { companyName, goal, message },
     },
     executed: [],
   };
@@ -133,27 +136,45 @@ async function executeSession(runtime: CliRuntime, options: WizardOptions, sessi
   const actions: WizardExecutedAction[] = [...session.executed];
   const params = session.next_step.params_collected;
 
-  if (params.companyName && params.goal && !actions.some((action) => action.kind === 'company.init')) {
+  if (params.companyName && params.goal && !await hasInitializedCompany(runtime, params.companyName, actions)) {
     const args = ['company', 'init', params.companyName, '--goal', params.goal];
     await runCommand(args);
-    actions.push({
-      kind: 'company.init',
-      companyName: params.companyName,
-      goal: params.goal,
-      args,
-    });
+    if (!actions.some((action) => action.kind === 'company.init')) {
+      actions.push({
+        kind: 'company.init',
+        companyName: params.companyName,
+        goal: params.goal,
+        args,
+      });
+    }
   }
 
-  if (session.next_step.kind === 'ceo_instruction' && params.message) {
-    const action = await buildCeoInstructionAction(options.sessionRoot, session.session_id, params.message);
-    await runCommand(action.args);
-    actions.push(action);
+  if (session.next_step.kind === 'ceo_instruction') {
+    const ceoParams = session.next_step.params_collected;
+
+    if (ceoParams.message || options.mode === 'resume') {
+      ceoParams.message ??= await options.prompt('What should the CEO tell the manager? ');
+
+      if (!actions.some((action) => action.kind === 'ceo.instruction')) {
+        const action = await buildCeoInstructionAction(options.sessionRoot, session.session_id, ceoParams.message);
+        await runCommand(action.args);
+        actions.push(action);
+      }
+    }
   }
 
   session.executed = actions;
   await saveSession(options.sessionRoot, session);
 
   return renderSummary(actions);
+}
+
+async function hasInitializedCompany(runtime: CliRuntime, companyName: string, actions: WizardExecutedAction[]) {
+  if (!actions.some((action) => action.kind === 'company.init')) {
+    return false;
+  }
+
+  return (await runtime.storage.listCompanies()).some((company) => company.name === companyName);
 }
 
 async function buildCeoInstructionAction(sessionRoot: string, sessionId: string, message: string): Promise<WizardExecutedAction> {

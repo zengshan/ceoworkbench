@@ -53,6 +53,16 @@ const reviewer: Agent = {
   updatedAt: '2026-04-25T00:00:00.000Z',
 };
 
+class StrictTaskStorage extends MemoryStorage {
+  async createTask(task: Task) {
+    if ((await this.listTasks(task.companyId)).some((candidate) => candidate.id === task.id)) {
+      throw new Error(`duplicate task id: ${task.id}`);
+    }
+
+    return super.createTask(task);
+  }
+}
+
 async function createInReviewFixture(storage: MemoryStorage) {
   await storage.createCompany(company);
   await storage.createAgent(worker);
@@ -363,6 +373,178 @@ describe('Supervisor', () => {
       kind: 'continuation',
       status: 'queued',
     });
+  });
+
+  it('creates a default reviewer and queues review when a worker artifact has no explicit task id', async () => {
+    const storage = new MemoryStorage();
+    await storage.createCompany(company);
+    await storage.createAgent(worker);
+    await storage.createTask({
+      id: 'task-worker-output',
+      companyId: company.id,
+      assignedAgentId: worker.id,
+      title: 'Story architecture',
+      objective: 'Produce story architecture.',
+      expectedOutput: 'A reviewable story architecture artifact.',
+      status: 'running',
+      priority: 50,
+      dependencyTaskIds: [],
+      inputArtifactIds: [],
+      outputArtifactIds: [],
+      requiresReview: true,
+      createdAt: '2026-04-25T00:00:00.000Z',
+      updatedAt: '2026-04-25T00:00:00.000Z',
+    });
+    const adapter: AgentAdapter = {
+      async runStep(context) {
+        return {
+          events: [],
+          artifacts: [
+            {
+              id: 'artifact-worker-output',
+              companyId: company.id,
+              runId: context.run.id,
+              agentId: worker.id,
+              path: 'artifacts/story.md',
+              title: 'Story architecture',
+              artifactType: 'markdown',
+              status: 'submitted',
+              content: 'Story architecture body.',
+              createdAt: '2026-04-25T00:00:00.000Z',
+              updatedAt: '2026-04-25T00:00:00.000Z',
+            },
+          ],
+        };
+      },
+    };
+    const supervisor = new Supervisor({
+      storage,
+      adapter,
+      clock,
+      ids: new SequentialIdGenerator(),
+      leaseOwner: 'test-worker',
+    });
+    const message: Message = {
+      id: 'message-worker',
+      companyId: company.id,
+      agentId: worker.id,
+      author: 'system',
+      kind: 'follow_up',
+      content: 'Submit story architecture.',
+      createdAt: '2026-04-25T00:00:00.000Z',
+    };
+
+    await supervisor.handleMessage(message, worker);
+    await supervisor.tick(company.id);
+
+    const agents = await storage.listAgents(company.id);
+    const tasks = await storage.listTasks(company.id);
+    const artifacts = await storage.listArtifacts(company.id);
+    const messages = await storage.listMessages(company.id);
+    const runs = await storage.listRuns(company.id);
+
+    const reviewerAgent = agents.find((agent) => agent.role === 'reviewer');
+    expect(reviewerAgent).toMatchObject({
+      name: 'markdown-reviewer',
+      capabilities: ['review:markdown'],
+    });
+    expect(artifacts[0]).toMatchObject({
+      id: 'artifact-worker-output',
+      taskId: 'task-worker-output',
+    });
+    expect(tasks[0]).toMatchObject({
+      id: 'task-worker-output',
+      status: 'in_review',
+      outputArtifactIds: ['artifact-worker-output'],
+    });
+    expect(messages.at(-1)).toMatchObject({
+      agentId: reviewerAgent?.id,
+      author: 'system',
+      kind: 'follow_up',
+      content: expect.stringContaining('Review artifact artifact-worker-output for task task-worker-output.'),
+    });
+    expect(runs.at(-1)).toMatchObject({
+      agentId: reviewerAgent?.id,
+      kind: 'continuation',
+      status: 'queued',
+    });
+  });
+
+  it('updates an existing delegated task when a worker returns the same task id', async () => {
+    const storage = new StrictTaskStorage();
+    await storage.createCompany(company);
+    await storage.createAgent(worker);
+    await storage.createTask({
+      id: 'task-worker',
+      companyId: company.id,
+      assignedAgentId: worker.id,
+      title: 'Research brief',
+      objective: 'Produce a research brief.',
+      expectedOutput: 'A submitted brief.',
+      status: 'queued',
+      priority: 50,
+      dependencyTaskIds: [],
+      inputArtifactIds: [],
+      outputArtifactIds: [],
+      requiresReview: true,
+      createdAt: '2026-04-25T00:00:00.000Z',
+      updatedAt: '2026-04-25T00:00:00.000Z',
+    });
+    const adapter: AgentAdapter = {
+      async runStep() {
+        return {
+          events: [],
+          tasks: [
+            {
+              id: 'task-worker',
+              companyId: company.id,
+              assignedAgentId: worker.id,
+              title: 'Research brief',
+              objective: 'Produce a research brief.',
+              expectedOutput: 'A submitted brief.',
+              status: 'submitted',
+              priority: 50,
+              dependencyTaskIds: [],
+              inputArtifactIds: [],
+              outputArtifactIds: ['artifact-worker'],
+              requiresReview: true,
+              createdAt: '2026-04-25T00:00:00.000Z',
+              updatedAt: '2026-04-25T00:00:00.000Z',
+            },
+          ],
+        };
+      },
+    };
+    const supervisor = new Supervisor({
+      storage,
+      adapter,
+      clock,
+      ids: new SequentialIdGenerator(),
+      leaseOwner: 'test-worker',
+    });
+    const message: Message = {
+      id: 'message-worker',
+      companyId: company.id,
+      agentId: worker.id,
+      author: 'system',
+      kind: 'follow_up',
+      content: 'Submit the research report.',
+      createdAt: '2026-04-25T00:00:00.000Z',
+    };
+
+    await supervisor.handleMessage(message, worker);
+    await supervisor.tick(company.id);
+
+    const tasks = await storage.listTasks(company.id);
+    const runs = await storage.listRuns(company.id);
+
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0]).toMatchObject({
+      id: 'task-worker',
+      status: 'submitted',
+      outputArtifactIds: ['artifact-worker'],
+    });
+    expect(runs[0]).toMatchObject({ status: 'completed' });
   });
 
   it('completes the original task when a reviewer accepts the artifact with high confidence', async () => {

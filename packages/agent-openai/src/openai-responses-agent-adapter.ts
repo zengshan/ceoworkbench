@@ -86,6 +86,8 @@ function buildInstructions() {
     'Use the run id, company id, and agent id from the context when creating records.',
     'Managers may use delegations to create or reuse specialist workers and assign work.',
     'Worker agents should produce artifacts and memoryEntries for their assigned task.',
+    'Reviewer agents must return reviewReports that judge the assigned artifact against the task objective, expected output, evidence quality, coherence, and scope fit.',
+    'Reviewer agents should not rewrite the artifact; they should emit verdicts, findings, acceptanceCriteriaCheck, confidence, and escalation flags.',
     'Use decisionRequests and blocked only when CEO input is truly required.',
   ].join('\n');
 }
@@ -105,6 +107,7 @@ function agentStepResultFormat() {
         'artifacts',
         'memoryEntries',
         'decisionRequests',
+        'reviewReports',
         'continuationRequested',
         'blocked',
       ],
@@ -231,9 +234,69 @@ function agentStepResultFormat() {
             },
           },
         },
+        reviewReports: {
+          type: 'array',
+          items: reviewReportSchema(),
+        },
         continuationRequested: { type: 'boolean' },
         blocked: { type: 'boolean' },
       },
+    },
+  };
+}
+
+function reviewReportSchema() {
+  return {
+    type: 'object',
+    additionalProperties: false,
+    required: [
+      'artifactId',
+      'taskId',
+      'verdict',
+      'confidence',
+      'findings',
+      'acceptanceCriteriaCheck',
+      'scopeDriftDetected',
+      'needsCeoInput',
+      'ceoQuestion',
+    ],
+    properties: {
+      artifactId: { type: 'string' },
+      taskId: { type: 'string' },
+      verdict: { type: 'string', enum: ['accepted', 'needs_revision', 'rejected', 'escalate'] },
+      confidence: { type: 'number' },
+      findings: {
+        type: 'array',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['id', 'severity', 'location', 'description', 'suggestedFix', 'mustAddress'],
+          properties: {
+            id: { type: 'string' },
+            severity: { type: 'string', enum: ['blocker', 'major', 'minor', 'nit'] },
+            location: { type: 'string' },
+            description: { type: 'string' },
+            suggestedFix: { type: ['string', 'null'] },
+            mustAddress: { type: 'boolean' },
+          },
+        },
+      },
+      acceptanceCriteriaCheck: {
+        type: 'array',
+        items: {
+          type: 'object',
+          additionalProperties: false,
+          required: ['criterion', 'met', 'evidence'],
+          properties: {
+            criterion: { type: 'string' },
+            met: { type: 'boolean' },
+            evidence: { type: 'string' },
+          },
+        },
+      },
+      scopeDriftDetected: { type: 'boolean' },
+      needsCeoInput: { type: 'boolean' },
+      ceoQuestion: { type: ['string', 'null'] },
     },
   };
 }
@@ -275,6 +338,7 @@ function extractOutputText(body: OpenAIResponseBody) {
 
 function extractStreamingOutputText(bodyText: string) {
   let output = '';
+  let finalText = '';
 
   for (const line of bodyText.split('\n')) {
     if (!line.startsWith('data: ')) {
@@ -289,19 +353,23 @@ function extractStreamingOutputText(bodyText: string) {
 
     try {
       const event = JSON.parse(data) as { type?: string; delta?: string; text?: string; output_text?: string };
-      if (typeof event.delta === 'string') {
+      if (event.type === 'response.output_text.delta' && typeof event.delta === 'string') {
         output += event.delta;
-      } else if (typeof event.text === 'string') {
-        output += event.text;
-      } else if (typeof event.output_text === 'string') {
-        output += event.output_text;
+      } else if (event.type === 'response.output_text.done' && typeof event.text === 'string') {
+        finalText = event.text;
+      } else if (!event.type && typeof event.delta === 'string') {
+        output += event.delta;
+      } else if (!event.type && typeof event.text === 'string') {
+        finalText = event.text;
+      } else if (!event.type && typeof event.output_text === 'string') {
+        finalText = event.output_text;
       }
     } catch {
       // Ignore malformed SSE keepalive or proxy diagnostic lines.
     }
   }
 
-  return output;
+  return output || finalText;
 }
 
 function extractErrorMessage(bodyText: string) {

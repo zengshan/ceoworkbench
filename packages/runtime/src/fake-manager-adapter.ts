@@ -45,6 +45,33 @@ export class FakeManagerAdapter implements AgentAdapter {
     const isCeoSteer = latestMessage?.author === 'ceo' && latestMessage.kind === 'steer';
     const isHistoricalNovel = /历史小说|historical novel/i.test(messageText);
     const requiresDecision = isCeoSteer && /确认|决策|选择|direction|decision/i.test(messageText);
+    const reviewTarget = messageText.match(/Review artifact (\S+) for task (\S+)\./);
+
+    if (reviewTarget) {
+      const [, artifactId, taskId] = reviewTarget;
+
+      return {
+        events,
+        reviewReports: [
+          {
+            artifactId,
+            taskId,
+            verdict: 'accepted',
+            confidence: 0.9,
+            findings: [],
+            acceptanceCriteriaCheck: [
+              {
+                criterion: 'Fake reviewer accepts deterministic test artifact.',
+                met: true,
+                evidence: `Reviewed ${artifactId}.`,
+              },
+            ],
+            scopeDriftDetected: false,
+            needsCeoInput: false,
+          },
+        ],
+      };
+    }
 
     return {
       events,

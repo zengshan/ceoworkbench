@@ -1,8 +1,11 @@
 import { createCliRuntime, runCli } from './commands';
 
-const runtime = createCliRuntime();
+let runtime: ReturnType<typeof createCliRuntime> | undefined;
 
-runCli(process.argv.slice(2), runtime)
+(async () => {
+  runtime = createCliRuntime();
+  return runCli(process.argv.slice(2), runtime);
+})()
   .then((output) => {
     process.stdout.write(`${output}\n`);
   })
@@ -12,5 +15,5 @@ runCli(process.argv.slice(2), runtime)
     process.exitCode = 1;
   })
   .finally(async () => {
-    await runtime.close?.();
+    await runtime?.close?.();
   });

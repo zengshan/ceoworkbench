@@ -374,13 +374,15 @@ function translateEvent(event: RunEvent, agentNameById: Map<string, string>) {
       return `${agent} 汇报：${typeof text === 'string' ? text : '更新了进展'}`;
     }
     case 'agent_created':
-      return `${agent} 创建 worker：${event.payload.name ?? event.payload.agentId ?? '未命名成员'}`;
+      return `${agent} 创建 ${event.payload.role === 'reviewer' ? 'reviewer' : 'worker'}：${event.payload.name ?? event.payload.agentId ?? '未命名成员'}`;
     case 'task_created':
       return `${agent} 创建任务：${event.payload.title ?? event.payload.taskId ?? '未命名任务'}`;
     case 'artifact_created':
       return `${agent} 产出文件：${event.payload.path ?? event.payload.artifactId ?? '未命名文件'}`;
     case 'memory_updated':
       return `${agent} 更新了公司记忆`;
+    case 'report_created':
+      return `${agent} 创建评审报告：${event.payload.title ?? event.payload.reportId ?? '未命名报告'}`;
     case 'decision_required':
       return `${agent} 请求 CEO 决策：${event.payload.title ?? event.payload.decisionRequestId ?? '未命名决策'}`;
     case 'run_completed':

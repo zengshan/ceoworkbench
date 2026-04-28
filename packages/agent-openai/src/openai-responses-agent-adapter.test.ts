@@ -75,10 +75,15 @@ describe('OpenAIResponsesAgentAdapter', () => {
     });
     expect(body.model).toBe('gpt-5.2');
     expect(body.instructions).toContain('CEO Workbench');
+    expect(body.instructions).toContain('Reviewer agents must return reviewReports');
     expect(body.text.format).toMatchObject({
       type: 'json_schema',
       name: 'agent_step_result',
       strict: true,
+    });
+    expect(body.text.format.schema.required).toContain('reviewReports');
+    expect(body.text.format.schema.properties.reviewReports).toMatchObject({
+      type: 'array',
     });
     expect(body.input).toEqual([
       {
@@ -129,6 +134,63 @@ describe('OpenAIResponsesAgentAdapter', () => {
       blocked: false,
       continuationRequested: false,
     });
+  });
+
+  it('does not duplicate streaming output when the SSE stream includes both deltas and final text', async () => {
+    const payload = JSON.stringify({
+      events: [],
+      tasks: [],
+      delegations: [
+        {
+          agentName: 'Story Development Lead',
+          role: 'worker',
+          lifecycle: 'on_demand',
+          capabilities: ['story'],
+          sandboxProfile: 'default',
+          title: 'Create concept',
+          objective: 'Create a concept package.',
+          expectedOutput: 'Concept package.',
+          priority: 90,
+          requiresReview: true,
+        },
+      ],
+      artifacts: [],
+      memoryEntries: [],
+      decisionRequests: [],
+      continuationRequested: true,
+      blocked: false,
+    });
+    const chunks = [
+      payload.slice(0, 80),
+      payload.slice(80),
+    ];
+    const adapter = new OpenAIResponsesAgentAdapter({
+      apiKey: 'test-key',
+      model: 'gpt-5.4',
+      fetchFn: async () => new Response([
+        'data: {"type":"response.output_text.delta","delta":',
+        JSON.stringify(chunks[0]),
+        '}\n\n',
+        'data: {"type":"response.output_text.delta","delta":',
+        JSON.stringify(chunks[1]),
+        '}\n\n',
+        'data: {"type":"response.output_text.done","text":',
+        JSON.stringify(payload),
+        '}\n\n',
+        'data: {"type":"response.completed"}\n\n',
+      ].join(''), {
+        status: 200,
+        headers: { 'Content-Type': 'text/event-stream' },
+      }),
+    });
+
+    const result = await adapter.runStep(context);
+
+    expect(result.delegations?.[0]).toMatchObject({
+      agentName: 'Story Development Lead',
+      objective: 'Create a concept package.',
+    });
+    expect(result.artifacts?.[0]?.path).not.toBe(`artifacts/${context.run.id}/agent-output.md`);
   });
 
   it('wraps non-JSON model output into a submitted artifact instead of failing', async () => {

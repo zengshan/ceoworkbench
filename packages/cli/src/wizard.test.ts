@@ -5,9 +5,20 @@ import { describe, expect, it, vi } from 'vitest';
 import { createCliRuntime } from './commands';
 import { runWizard } from './wizard';
 
+const missingConfigPath = path.join(tmpdir(), 'ceoworkbench-wizard-test-missing-local.env');
+
+function createFakeCliRuntime() {
+  return createCliRuntime(undefined, {
+    env: {
+      CEOWORKBENCH_CONFIG_PATH: missingConfigPath,
+      CEOWORKBENCH_AGENT_ADAPTER: 'fake',
+    },
+  });
+}
+
 describe('ceoworkbench wizard', () => {
   it('maps onboarding steps to existing CLI commands and asks only required prompts', async () => {
-    const runtime = createCliRuntime();
+    const runtime = createFakeCliRuntime();
     const prompts: string[] = [];
     const runCommand = vi.fn(async (args: string[]) => `ran ${args.join(' ')}`);
     const sessionRoot = await mkdtemp(path.join(tmpdir(), 'ceoworkbench-wizard-'));
@@ -17,37 +28,58 @@ describe('ceoworkbench wizard', () => {
       idGenerator: () => 'session-a',
       prompt: async (question) => {
         prompts.push(question);
-        return prompts.length === 1 ? 'novel' : 'Publish a novel';
+        if (question === 'Company name: ') {
+          return 'novel';
+        }
+        if (question === 'Company goal: ') {
+          return 'Publish a novel';
+        }
+        return 'Draft the first plan';
       },
       runCommand,
       mode: 'bootstrap',
     });
 
-    expect(prompts).toHaveLength(2);
+    expect(prompts).toEqual([
+      'Company name: ',
+      'Company goal: ',
+      'What should the CEO tell the manager? ',
+    ]);
     expect(prompts.join('\n')).not.toMatch(/start|initialize|default|enable/i);
     expect(runCommand).toHaveBeenCalledWith(['company', 'init', 'novel', '--goal', 'Publish a novel']);
+    expect(runCommand).toHaveBeenCalledWith(['ceo', 'Draft the first plan']);
     expect(output).toContain('Wizard executed:');
     expect(output).toContain('Equivalent commands:');
     expect(output).toContain('npm run ceoworkbench -- company init novel --goal');
+    expect(output).toContain('npm run ceoworkbench -- ceo');
   });
 
   it('prints equivalent commands that can run through the CLI command runner', async () => {
-    const runtime = createCliRuntime();
+    const runtime = createFakeCliRuntime();
     const sessionRoot = await mkdtemp(path.join(tmpdir(), 'ceoworkbench-wizard-'));
     const output = await runWizard(runtime, {
       sessionRoot,
       idGenerator: () => 'session-b',
-      prompt: async (question) => question.includes('name') ? 'novel' : 'Publish a novel',
+      prompt: async (question) => {
+        if (question.includes('name')) {
+          return 'novel';
+        }
+        if (question.includes('goal')) {
+          return 'Publish a novel';
+        }
+        return 'Draft the first plan';
+      },
       mode: 'bootstrap',
     });
 
     expect(output).toContain('Wizard executed:');
     expect(output).toContain('Equivalent commands:');
     expect(output).toContain('npm run ceoworkbench -- company init novel --goal');
+    expect(output).toContain('npm run ceoworkbench -- ceo');
   });
 
   it('uses message files for complex CEO messages in equivalent commands', async () => {
-    const runtime = createCliRuntime();
+    const runtime = createFakeCliRuntime();
     const sessionRoot = await mkdtemp(path.join(tmpdir(), 'ceoworkbench-wizard-'));
     await runtime.storage.createCompany({
       id: 'company-1',
@@ -82,7 +114,7 @@ describe('ceoworkbench wizard', () => {
   });
 
   it('continues, discards, and rejects incompatible checkpoint sessions', async () => {
-    const runtime = createCliRuntime();
+    const runtime = createFakeCliRuntime();
     const sessionRoot = await mkdtemp(path.join(tmpdir(), 'ceoworkbench-wizard-'));
 
     await runWizard(runtime, {
@@ -123,8 +155,63 @@ describe('ceoworkbench wizard', () => {
     })).rejects.toThrow('Unsupported wizard session schema_version 999');
   });
 
+  it('prompts for the missing CEO instruction when resuming a bootstrap checkpoint', async () => {
+    const runtime = createFakeCliRuntime();
+    const sessionRoot = await mkdtemp(path.join(tmpdir(), 'ceoworkbench-wizard-'));
+
+    await runWizard(runtime, {
+      sessionRoot,
+      idGenerator: () => 'session-needs-message',
+      prompt: async (question) => question.includes('name') ? 'novel' : 'Publish a novel',
+      mode: 'bootstrap',
+      stopAfterCheckpoint: true,
+    });
+
+    const prompts: string[] = [];
+    const output = await runWizard(runtime, {
+      sessionRoot,
+      prompt: async (question) => {
+        prompts.push(question);
+        return prompts.length === 1 ? 'continue' : 'Draft the first plan';
+      },
+      mode: 'resume',
+    });
+
+    expect(prompts).toEqual([
+      'Resume wizard session session-needs-message? continue/discard ',
+      'What should the CEO tell the manager? ',
+    ]);
+    expect(output).toContain('ceo.instruction message="Draft the first plan"');
+
+    const runs = await runtime.storage.listRuns('company-000001');
+    expect(runs).toHaveLength(1);
+    expect(runs[0].kind).toBe('ceo_steer');
+  });
+
+  it('replays company init from an executed checkpoint when runtime state is empty', async () => {
+    const sessionRoot = await mkdtemp(path.join(tmpdir(), 'ceoworkbench-wizard-'));
+    const firstRuntime = createFakeCliRuntime();
+
+    await runWizard(firstRuntime, {
+      sessionRoot,
+      idGenerator: () => 'session-replay',
+      prompt: async (question) => question.includes('name') ? 'novel' : 'Publish a novel',
+      mode: 'bootstrap',
+    });
+
+    const secondRuntime = createFakeCliRuntime();
+    const output = await runWizard(secondRuntime, {
+      sessionRoot,
+      prompt: async () => 'continue',
+      mode: 'resume',
+    });
+
+    expect(output).toContain('Resumed wizard session session-replay');
+    expect((await secondRuntime.storage.listCompanies()).at(-1)?.name).toBe('novel');
+  });
+
   it('stores concurrent sessions in independent checkpoint files', async () => {
-    const runtime = createCliRuntime();
+    const runtime = createFakeCliRuntime();
     const sessionRoot = await mkdtemp(path.join(tmpdir(), 'ceoworkbench-wizard-'));
 
     await runWizard(runtime, {

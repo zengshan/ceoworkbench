@@ -5,9 +5,82 @@ import { describe, expect, it } from 'vitest';
 import type { SandboxRunInput, SandboxRuntime } from '../../sandbox-podman/src';
 import { createCliRuntime, runCli } from './commands';
 
+const missingConfigPath = path.join(tmpdir(), 'ceoworkbench-test-missing-local.env');
+
+const fakeEnv = {
+  CEOWORKBENCH_CONFIG_PATH: missingConfigPath,
+  CEOWORKBENCH_AGENT_ADAPTER: 'fake',
+};
+
+function createFakeCliRuntime(options: Parameters<typeof createCliRuntime>[1] = {}) {
+  return createCliRuntime(undefined, {
+    ...options,
+    env: {
+      ...fakeEnv,
+      ...options.env,
+    },
+  });
+}
+
 describe('ceoworkbench CLI commands', () => {
+  it('requires LLM adapter configuration instead of defaulting to fake manager', () => {
+    expect(() => createCliRuntime(undefined, {
+      env: {
+        CEOWORKBENCH_CONFIG_PATH: missingConfigPath,
+      },
+    })).toThrow(
+      'CEO Workbench requires an LLM agent adapter',
+    );
+  });
+
+  it('loads local env config and lets process env override config values', async () => {
+    const configRoot = await mkdtemp(path.join(tmpdir(), 'ceoworkbench-config-'));
+    const configPath = path.join(configRoot, 'local.env');
+    const sandboxRoot = path.join(configRoot, 'sandbox');
+    const inputs: SandboxRunInput[] = [];
+    const sandboxRuntime: SandboxRuntime = {
+      async run(input) {
+        inputs.push(input);
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify({ events: [] }),
+          stderr: '',
+          timedOut: false,
+        };
+      },
+    };
+
+    await writeFile(configPath, [
+      'export CEOWORKBENCH_AGENT_ADAPTER=sandbox-json',
+      'CEOWORKBENCH_RUNNER_ADAPTER=openai-responses',
+      'CEOWORKBENCH_AGENT_MODEL=gpt-from-file',
+      'OPENAI_API_KEY=sk-from-file',
+      '',
+    ].join('\n'), 'utf8');
+
+    const runtime = createCliRuntime(undefined, {
+      env: {
+        CEOWORKBENCH_CONFIG_PATH: configPath,
+        CEOWORKBENCH_SANDBOX_ROOT: sandboxRoot,
+        CEOWORKBENCH_AGENT_MODEL: 'gpt-from-env',
+      },
+      sandboxRuntime,
+    });
+
+    await runCli(['company', 'create', 'novel', '--goal', 'Publish a novel'], runtime);
+    await runCli(['agent', 'create', 'manager', '--role', 'manager'], runtime);
+    await runCli(['send', 'manager', '请拆解小说出版项目'], runtime);
+    await runCli(['start', '--once'], runtime);
+
+    expect(inputs[0].profile.env).toEqual({
+      CEOWORKBENCH_RUNNER_ADAPTER: 'openai-responses',
+      CEOWORKBENCH_AGENT_MODEL: 'gpt-from-env',
+      OPENAI_API_KEY: 'sk-from-file',
+    });
+  });
+
   it('runs the M2 fake manager loop from command calls', async () => {
-    const runtime = createCliRuntime();
+    const runtime = createFakeCliRuntime();
 
     expect(await runCli(['company', 'create', 'novel', '--goal', 'Publish a novel'], runtime)).toContain('Created company novel');
     expect(await runCli(['agent', 'create', 'manager', '--role', 'manager'], runtime)).toContain('Created agent manager');
@@ -35,7 +108,7 @@ describe('ceoworkbench CLI commands', () => {
   });
 
   it('reports and resolves pending CEO decisions', async () => {
-    const runtime = createCliRuntime();
+    const runtime = createFakeCliRuntime();
 
     await runCli(['company', 'create', 'novel', '--goal', 'Publish a novel'], runtime);
     await runCli(['agent', 'create', 'manager', '--role', 'manager'], runtime);
@@ -54,7 +127,7 @@ describe('ceoworkbench CLI commands', () => {
   });
 
   it('processes multiple queued runs with a bounded scheduler loop', async () => {
-    const runtime = createCliRuntime();
+    const runtime = createFakeCliRuntime();
 
     await runCli(['company', 'create', 'novel', '--goal', 'Publish a novel'], runtime);
     await runCli(['agent', 'create', 'manager', '--role', 'manager'], runtime);
@@ -84,8 +157,11 @@ describe('ceoworkbench CLI commands', () => {
     };
     const runtime = createCliRuntime(undefined, {
       env: {
+        CEOWORKBENCH_CONFIG_PATH: missingConfigPath,
         CEOWORKBENCH_AGENT_ADAPTER: 'sandbox-json',
         CEOWORKBENCH_SANDBOX_ROOT: sandboxRoot,
+        CEOWORKBENCH_RUNNER_ADAPTER: 'openai-responses',
+        OPENAI_API_KEY: 'sk-test',
       },
       sandboxRuntime,
     });
@@ -99,7 +175,7 @@ describe('ceoworkbench CLI commands', () => {
     const context = JSON.parse(await readFile(contextPath, 'utf8'));
 
     expect(inputs[0].command).toEqual(['/home/agent/context.json', '/home/agent/result.json']);
-    expect(inputs[0].profile.network).toBe('none');
+    expect(inputs[0].profile.network).toBe('slirp4netns');
     expect(inputs[0].profile.homeMount.hostPath).toBe(path.dirname(contextPath));
     expect(context.run.id).toBe('run-000005');
     expect(context.messages[0].content).toBe('请拆解小说出版项目');
@@ -121,6 +197,7 @@ describe('ceoworkbench CLI commands', () => {
     };
     const runtime = createCliRuntime(undefined, {
       env: {
+        CEOWORKBENCH_CONFIG_PATH: missingConfigPath,
         CEOWORKBENCH_AGENT_ADAPTER: 'sandbox-json',
         CEOWORKBENCH_SANDBOX_ROOT: sandboxRoot,
         CEOWORKBENCH_RUNNER_ADAPTER: 'openai-responses',
@@ -149,7 +226,9 @@ describe('ceoworkbench CLI commands', () => {
     const workspaceRoot = await mkdtemp(path.join(tmpdir(), 'ceoworkbench-workspace-'));
     const runtime = createCliRuntime(undefined, {
       env: {
+        CEOWORKBENCH_CONFIG_PATH: missingConfigPath,
         CEOWORKBENCH_WORKSPACE_ROOT: workspaceRoot,
+        CEOWORKBENCH_AGENT_ADAPTER: 'fake',
       },
     });
 
@@ -167,8 +246,26 @@ describe('ceoworkbench CLI commands', () => {
     expect(latestArtifact).toContain('请总经理拆解第一阶段工作');
   });
 
+  it('persists default CLI state across runtime instances', async () => {
+    const stateRoot = await mkdtemp(path.join(tmpdir(), 'ceoworkbench-state-'));
+    const env = {
+      CEOWORKBENCH_CONFIG_PATH: missingConfigPath,
+      CEOWORKBENCH_STATE_PATH: path.join(stateRoot, 'state.json'),
+      CEOWORKBENCH_WORKSPACE_ROOT: path.join(stateRoot, 'workspaces'),
+      CEOWORKBENCH_AGENT_ADAPTER: 'fake',
+    };
+    const firstRuntime = createCliRuntime(undefined, { env });
+
+    await runCli(['company', 'init', 'novel', '--goal', 'Publish a novel'], firstRuntime);
+
+    const secondRuntime = createCliRuntime(undefined, { env });
+
+    expect(await runCli(['status'], secondRuntime)).toContain('Company status: novel');
+    expect(await runCli(['team'], secondRuntime)).toContain('manager');
+  });
+
   it('queues exact multiline CEO content from a message file', async () => {
-    const runtime = createCliRuntime();
+    const runtime = createFakeCliRuntime();
     const messageRoot = await mkdtemp(path.join(tmpdir(), 'ceoworkbench-message-'));
     const messagePath = path.join(messageRoot, 'message.txt');
     const message = 'Line one\nLine "two" with spaces';
@@ -183,16 +280,16 @@ describe('ceoworkbench CLI commands', () => {
   });
 
   it('lists wizard in help output', async () => {
-    expect(await runCli(['help'])).toContain('ceoworkbench wizard');
+    expect(await runCli(['help'], createFakeCliRuntime())).toContain('ceoworkbench wizard');
   });
 
   it('lets the manager auto-staff specialist workers for a historical novel goal', async () => {
-    const runtime = createCliRuntime();
+    const runtime = createFakeCliRuntime();
 
     await runCli(['company', 'init', 'historical-novel', '--goal', '创作一部历史小说'], runtime);
     await runCli(['ceo', '我要创作一部历史小说'], runtime);
 
-    expect(await runCli(['work', '--until-idle'], runtime)).toContain('Processed 5 runs.');
+    expect(await runCli(['work', '--until-idle'], runtime)).toContain('Processed 9 runs.');
 
     const agents = await runtime.storage.listAgents('company-000001');
     const runs = await runtime.storage.listRuns('company-000001');
@@ -206,12 +303,15 @@ describe('ceoworkbench CLI commands', () => {
       'architect',
       'writer',
       'editor',
+      'markdown-reviewer',
     ]);
-    expect(runs.filter((run) => run.status === 'completed')).toHaveLength(5);
+    expect(runs.filter((run) => run.status === 'completed')).toHaveLength(9);
     expect(teamOutput).toContain('researcher');
     expect(teamOutput).toContain('writer');
     expect(watchOutput).toContain('agent_created');
     expect(watchOutput).toContain('run_started');
-    expect(timelineOutput).toContain('architect 开始工作');
+    expect(timelineOutput).toContain('architect 产出');
+    expect(timelineOutput).toContain('entered review');
+    expect(timelineOutput).toContain('markdown-reviewer 创建评审报告');
   });
 });

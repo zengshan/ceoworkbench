@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from 'node:fs';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { createInterface } from 'node:readline/promises';
@@ -20,8 +21,9 @@ import { buildArtifactReport, buildBriefingReport, buildDecisionReport, buildRun
 import { FakeManagerAdapter, SandboxedJsonAgentAdapter, type AgentAdapter, type AgentContext } from '../../runtime/src';
 import { PodmanSandboxRuntime, defaultSandboxProfile, type SandboxRuntime } from '../../sandbox-podman/src';
 import { Supervisor } from '../../supervisor/src';
-import { MemoryStorage, type Storage } from '../../storage/src';
+import { FileStorage, MemoryStorage, type Storage } from '../../storage/src';
 import { PostgresStorage } from '../../storage-postgres/src';
+import { OpenAIResponsesAgentAdapter } from '../../agent-openai/src';
 
 export type CliRuntimeOptions = {
   env?: NodeJS.ProcessEnv | Record<string, string | undefined>;
@@ -43,15 +45,18 @@ export type RuntimeStorage = Storage & {
 };
 
 export function createCliRuntime(storage?: RuntimeStorage, options: CliRuntimeOptions = {}): CliRuntime {
-  const runtimeStorage = storage ?? createDefaultStorage(options.env);
+  const env = loadCliEnv(options.env);
+  const runtimeStorage = storage ?? createDefaultStorage(env);
   const clock = new SystemClock();
-  const ids = runtimeStorage instanceof MemoryStorage ? new SequentialIdGenerator() : new RandomIdGenerator();
-  const workspaceRoot = getWorkspaceRoot(options.env);
+  const ids = runtimeStorage instanceof MemoryStorage && !(runtimeStorage instanceof FileStorage)
+    ? new SequentialIdGenerator()
+    : new RandomIdGenerator();
+  const workspaceRoot = getWorkspaceRoot(env);
   const supervisor = new Supervisor({
     storage: runtimeStorage,
     clock,
     ids,
-    adapter: createAgentAdapter(options),
+    adapter: createAgentAdapter({ ...options, env }),
     leaseOwner: 'cli-worker',
     writeArtifact: createArtifactWriter(runtimeStorage),
   });
@@ -416,7 +421,76 @@ function createDefaultStorage(env: NodeJS.ProcessEnv | Record<string, string | u
     return new PostgresStorage({ connectionString });
   }
 
-  return new MemoryStorage();
+  if ((env.VITEST || process.env.VITEST) && !env.CEOWORKBENCH_STATE_PATH) {
+    return new MemoryStorage();
+  }
+
+  return new FileStorage(env.CEOWORKBENCH_STATE_PATH ?? path.join(process.cwd(), '.ceoworkbench', 'state.json'));
+}
+
+function loadCliEnv(env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env) {
+  const configPath = env.CEOWORKBENCH_CONFIG_PATH ?? path.join(process.cwd(), '.ceoworkbench', 'local.env');
+  const fileEnv = existsSync(configPath)
+    ? parseLocalEnv(readFileSync(configPath, 'utf8'))
+    : {};
+
+  return {
+    ...fileEnv,
+    ...definedEnv(env),
+  };
+}
+
+function parseLocalEnv(content: string) {
+  const values: Record<string, string> = {};
+
+  for (const rawLine of content.split(/\r?\n/)) {
+    const line = rawLine.trim();
+
+    if (!line || line.startsWith('#')) {
+      continue;
+    }
+
+    const assignment = line.startsWith('export ') ? line.slice('export '.length).trim() : line;
+    const equalsIndex = assignment.indexOf('=');
+
+    if (equalsIndex <= 0) {
+      continue;
+    }
+
+    const key = assignment.slice(0, equalsIndex).trim();
+
+    if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) {
+      continue;
+    }
+
+    values[key] = unquoteEnvValue(assignment.slice(equalsIndex + 1).trim());
+  }
+
+  return values;
+}
+
+function unquoteEnvValue(value: string) {
+  if (value.startsWith('"') && value.endsWith('"')) {
+    return value.slice(1, -1).replaceAll('\\"', '"').replaceAll('\\\\', '\\');
+  }
+
+  if (value.startsWith("'") && value.endsWith("'")) {
+    return value.slice(1, -1);
+  }
+
+  return value;
+}
+
+function definedEnv(env: NodeJS.ProcessEnv | Record<string, string | undefined>) {
+  const values: Record<string, string> = {};
+
+  for (const [key, value] of Object.entries(env)) {
+    if (value !== undefined) {
+      values[key] = value;
+    }
+  }
+
+  return values;
 }
 
 function getWorkspaceRoot(env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env) {
@@ -453,10 +527,41 @@ function createArtifactWriter(storage: RuntimeStorage) {
 function createAgentAdapter(options: CliRuntimeOptions): AgentAdapter {
   const env = options.env ?? process.env;
 
-  if (env.CEOWORKBENCH_AGENT_ADAPTER !== 'sandbox-json') {
-    return new FakeManagerAdapter();
+  if (env.CEOWORKBENCH_AGENT_ADAPTER === 'fake') {
+    if (env.VITEST || process.env.VITEST) {
+      return new FakeManagerAdapter();
+    }
+
+    throw new Error('Fake manager adapter is only available in tests. Configure an LLM agent adapter.');
   }
 
+  if (env.CEOWORKBENCH_AGENT_ADAPTER === 'sandbox-json') {
+    if (env.CEOWORKBENCH_RUNNER_ADAPTER !== 'openai-responses' || !env.OPENAI_API_KEY) {
+      throw new Error('CEO Workbench requires sandbox-json to use CEOWORKBENCH_RUNNER_ADAPTER=openai-responses with OPENAI_API_KEY.');
+    }
+
+    return createSandboxedJsonAgentAdapter(options, env);
+  }
+
+  if (env.CEOWORKBENCH_AGENT_ADAPTER && env.CEOWORKBENCH_AGENT_ADAPTER !== 'openai-responses') {
+    throw new Error(`Unknown CEOWORKBENCH_AGENT_ADAPTER: ${env.CEOWORKBENCH_AGENT_ADAPTER}`);
+  }
+
+  if (!env.OPENAI_API_KEY) {
+    throw new Error('CEO Workbench requires an LLM agent adapter. Set OPENAI_API_KEY or CEOWORKBENCH_AGENT_ADAPTER=sandbox-json with an OpenAI runner.');
+  }
+
+  return new OpenAIResponsesAgentAdapter({
+    apiKey: env.OPENAI_API_KEY,
+    model: env.CEOWORKBENCH_AGENT_MODEL ?? 'gpt-5.4',
+    baseUrl: env.OPENAI_BASE_URL,
+  });
+}
+
+function createSandboxedJsonAgentAdapter(
+  options: CliRuntimeOptions,
+  env: NodeJS.ProcessEnv | Record<string, string | undefined>,
+): AgentAdapter {
   const sandboxRoot = env.CEOWORKBENCH_SANDBOX_ROOT ?? path.join(process.cwd(), '.ceoworkbench', 'sandbox');
   const image = env.CEOWORKBENCH_AGENT_IMAGE ?? 'ceoworkbench-agent:latest';
   const commandTemplate = splitCommand(env.CEOWORKBENCH_AGENT_COMMAND ?? '');

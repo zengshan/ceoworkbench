@@ -104,11 +104,14 @@ export class Supervisor {
       }
 
       for (const task of result.tasks ?? []) {
-        await this.options.storage.createTask(task);
-        await this.options.storage.appendRunEvent(this.event('task_created', task.companyId, {
-          taskId: task.id,
-          title: task.title,
-        }, runningRun.id, runningRun.agentId));
+        const created = await this.saveTask(task);
+
+        if (created) {
+          await this.options.storage.appendRunEvent(this.event('task_created', task.companyId, {
+            taskId: task.id,
+            title: task.title,
+          }, runningRun.id, runningRun.agentId));
+        }
       }
 
       for (const delegation of result.delegations ?? []) {
@@ -116,13 +119,14 @@ export class Supervisor {
       }
 
       for (const artifact of result.artifacts ?? []) {
-        await this.options.writeArtifact?.(artifact);
-        await this.options.storage.createArtifact(artifact);
-        await this.options.storage.appendRunEvent(this.event('artifact_created', artifact.companyId, {
-          artifactId: artifact.id,
-          path: artifact.path,
+        const artifactForReview = await this.attachArtifactToReviewTask(runningRun, artifact);
+        await this.options.writeArtifact?.(artifactForReview);
+        await this.options.storage.createArtifact(artifactForReview);
+        await this.options.storage.appendRunEvent(this.event('artifact_created', artifactForReview.companyId, {
+          artifactId: artifactForReview.id,
+          path: artifactForReview.path,
         }, runningRun.id, runningRun.agentId));
-        await this.queueReviewIfRequired(runningRun, artifact);
+        await this.queueReviewIfRequired(runningRun, artifactForReview);
       }
 
       for (const reviewReport of result.reviewReports ?? []) {
@@ -212,6 +216,47 @@ export class Supervisor {
     await this.handleMessage(message, agent);
   }
 
+  private async saveTask(task: Task) {
+    const existingTask = (await this.options.storage.listTasks(task.companyId))
+      .find((candidate) => candidate.id === task.id);
+
+    if (existingTask) {
+      await this.options.storage.updateTask(task);
+      return false;
+    }
+
+    await this.options.storage.createTask(task);
+    return true;
+  }
+
+  private async attachArtifactToReviewTask(sourceRun: Run, artifact: Artifact) {
+    if (artifact.taskId) {
+      return artifact;
+    }
+
+    const [agents, tasks] = await Promise.all([
+      this.options.storage.listAgents(artifact.companyId),
+      this.options.storage.listTasks(artifact.companyId),
+    ]);
+    const agent = agents.find((candidate) => candidate.id === sourceRun.agentId);
+
+    if (agent?.role !== 'worker') {
+      return artifact;
+    }
+
+    const task = [...tasks]
+      .reverse()
+      .find((candidate) => (
+        candidate.assignedAgentId === sourceRun.agentId
+        && candidate.requiresReview
+        && candidate.status !== 'completed'
+        && candidate.status !== 'failed'
+        && candidate.status !== 'escalated'
+      ));
+
+    return task ? { ...artifact, taskId: task.id } : artifact;
+  }
+
   private async queueReviewIfRequired(sourceRun: Run, artifact: Artifact) {
     if (!artifact.taskId) {
       return;
@@ -247,10 +292,11 @@ export class Supervisor {
     }
 
     const artifactKind = artifact.kind ?? artifact.artifactType;
+    const reviewers = await this.ensureReviewerForKind(artifact.companyId, artifactKind, sourceRun, agents);
     const result = pickReviewer({
       artifactId: artifact.id,
       artifactKind,
-      candidates: agents
+      candidates: reviewers
         .filter((agent) => agent.role === 'reviewer')
         .map((agent) => ({
           ...agent,
@@ -273,6 +319,15 @@ export class Supervisor {
     }
 
     await this.options.storage.updateTask(markTaskInReview(task, artifact.id, this.options.clock.now()));
+    const reviewer = reviewers.find((agent) => agent.id === result.reviewerId)!;
+    await this.options.storage.appendRunEvent(this.event('agent_event_emitted', artifact.companyId, {
+      eventKind: 'review_queued',
+      text: `Artifact ${artifact.path} entered review with ${reviewer.name}.`,
+      artifactId: artifact.id,
+      taskId: task.id,
+      reviewerId: reviewer.id,
+      artifactKind,
+    }, sourceRun.id, sourceRun.agentId));
 
     const message: Message = {
       id: this.options.ids.next('message'),
@@ -289,7 +344,42 @@ export class Supervisor {
       createdAt: this.options.clock.now(),
     };
 
-    await this.handleMessage(message, agents.find((agent) => agent.id === result.reviewerId)!);
+    await this.handleMessage(message, reviewer);
+  }
+
+  private async ensureReviewerForKind(companyId: string, artifactKind: string, sourceRun: Run, agents: Agent[]) {
+    const hasMatchingReviewer = agents.some((agent) => (
+      agent.role === 'reviewer'
+      && agent.capabilities.includes(`review:${artifactKind}`)
+    ));
+
+    if (hasMatchingReviewer) {
+      return agents;
+    }
+
+    const now = this.options.clock.now();
+    const reviewer: Agent = {
+      id: this.options.ids.next('agent'),
+      companyId,
+      name: `${artifactKind}-reviewer`,
+      role: 'reviewer',
+      lifecycle: 'on_demand',
+      capabilities: [`review:${artifactKind}`],
+      sandboxProfile: 'podman-default',
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    await this.options.storage.createAgent(reviewer);
+    await this.options.storage.appendRunEvent(this.event('agent_created', companyId, {
+      agentId: reviewer.id,
+      name: reviewer.name,
+      role: reviewer.role,
+      reviewKind: artifactKind,
+      delegatedByRunId: sourceRun.id,
+    }, sourceRun.id, sourceRun.agentId));
+
+    return [...agents, reviewer];
   }
 
   private async applyReviewReport(sourceRun: Run, reviewReport: ReviewReport) {

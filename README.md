@@ -79,20 +79,37 @@ npm run ceoworkbench -- briefing
 npm run ceoworkbench -- artifact list
 ```
 
-By default the CLI uses in-memory storage. Set `CEOWORKBENCH_DATABASE_URL` or `DATABASE_URL` to use Postgres storage.
+By default the CLI stores state in `.ceoworkbench/state.json`. Set `CEOWORKBENCH_DATABASE_URL` or `DATABASE_URL` to use Postgres storage.
 
 ## OpenAI Runner Mode
 
-The default runtime uses the fake manager for deterministic local tests. To run real agent steps through the sandboxed JSON runner and OpenAI Responses adapter:
+The CLI automatically reads `.ceoworkbench/local.env` before creating the runtime. Existing shell environment variables override values from that file.
+
+For direct OpenAI Responses execution:
 
 ```bash
+cat > .ceoworkbench/local.env <<'EOF'
+export CEOWORKBENCH_AGENT_MODEL=gpt-5.4
+export OPENAI_API_KEY="..."
+EOF
+
+npm run ceoworkbench -- work --until-idle
+```
+
+For sandboxed JSON execution:
+
+```bash
+cat > .ceoworkbench/local.env <<'EOF'
 export CEOWORKBENCH_AGENT_ADAPTER=sandbox-json
 export CEOWORKBENCH_RUNNER_ADAPTER=openai-responses
-export CEOWORKBENCH_AGENT_MODEL=gpt-5.2
+export CEOWORKBENCH_AGENT_MODEL=gpt-5.4
 export OPENAI_API_KEY="..."
+EOF
 
 npm run ceoworkbench -- start --once
 ```
+
+Without an LLM configuration, runtime commands fail fast instead of using the old fake manager fallback.
 
 When `CEOWORKBENCH_RUNNER_ADAPTER=openai-responses` is set, the sandbox profile enables network access and forwards only:
 

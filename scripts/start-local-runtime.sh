@@ -15,6 +15,10 @@ fi
 
 mkdir -p .ceoworkbench
 
+if [ -f "$env_file" ]; then
+  source "$env_file"
+fi
+
 if ! podman container exists "$container_name"; then
   podman run -d \
     --name "$container_name" \
@@ -45,8 +49,13 @@ fi
 cat > "$env_file" <<EOF
 export CEOWORKBENCH_DATABASE_URL=postgres://$user:$password@127.0.0.1:$host_port/$database
 export CEOWORKBENCH_AGENT_ADAPTER=sandbox-json
+export CEOWORKBENCH_RUNNER_ADAPTER=openai-responses
+export CEOWORKBENCH_AGENT_MODEL=${CEOWORKBENCH_AGENT_MODEL:-gpt-5.4}
 export CEOWORKBENCH_AGENT_IMAGE=ceoworkbench-agent:latest
 export CEOWORKBENCH_SANDBOX_ROOT=$PWD/.ceoworkbench/sandbox
+${OPENAI_BASE_URL:+export OPENAI_BASE_URL="$OPENAI_BASE_URL"}
+${OPENAI_API_KEY:+export OPENAI_API_KEY="$OPENAI_API_KEY"}
+# Add OPENAI_API_KEY here if it is not already set above.
 EOF
 
 source "$env_file"

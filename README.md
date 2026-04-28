@@ -12,9 +12,10 @@ M2 establishes the first end-to-end agent runtime experience:
 
 - Manager agents can decompose a steer into delegated worker tasks.
 - Delegations can create or reuse worker agents and queue follow-up runs.
+- Reviewers are created and queued automatically for reviewable artifacts.
 - The OpenAI Responses runner supports structured output, streaming output, and narrative-output fallback.
 - Sandbox mode can enable network access only for OpenAI runner mode and forwards a small environment allowlist.
-- Timeline and briefing reports expose recent progress and artifacts.
+- Timeline and briefing reports expose recent progress, artifacts, and review activity.
 
 Novel planning has been used only as a test scenario for this workflow. It is not the product positioning.
 
@@ -48,6 +49,14 @@ Run the CLI:
 
 ```bash
 npm run ceoworkbench -- help
+```
+
+For a guided first run:
+
+```bash
+npm run ceoworkbench -- wizard
+npm run ceoworkbench -- work --until-idle
+npm run ceoworkbench -- timeline
 ```
 
 ## CLI Runtime
@@ -91,6 +100,8 @@ For direct OpenAI Responses execution:
 cat > .ceoworkbench/local.env <<'EOF'
 export CEOWORKBENCH_AGENT_MODEL=gpt-5.4
 export OPENAI_API_KEY="..."
+# Optional when using a compatible gateway.
+export OPENAI_BASE_URL="https://example.com/v1"
 EOF
 
 npm run ceoworkbench -- work --until-idle
@@ -104,6 +115,8 @@ export CEOWORKBENCH_AGENT_ADAPTER=sandbox-json
 export CEOWORKBENCH_RUNNER_ADAPTER=openai-responses
 export CEOWORKBENCH_AGENT_MODEL=gpt-5.4
 export OPENAI_API_KEY="..."
+# Optional when using a compatible gateway.
+export OPENAI_BASE_URL="https://example.com/v1"
 EOF
 
 npm run ceoworkbench -- start --once
@@ -117,6 +130,23 @@ When `CEOWORKBENCH_RUNNER_ADAPTER=openai-responses` is set, the sandbox profile 
 - `CEOWORKBENCH_AGENT_MODEL`
 - `OPENAI_API_KEY`
 - `OPENAI_BASE_URL`
+
+For local Postgres plus sandbox setup, use:
+
+```bash
+./scripts/start-local-runtime.sh
+source .ceoworkbench/local.env
+npm run ceoworkbench -- wizard
+npm run ceoworkbench -- work --until-idle
+```
+
+`start-local-runtime.sh` reuses values already present in `.ceoworkbench/local.env`, including `OPENAI_API_KEY`, `OPENAI_BASE_URL`, and `CEOWORKBENCH_AGENT_MODEL`. `clean-local-runtime.sh` removes local runtime state but preserves `.ceoworkbench/local.env`.
+
+## Review Flow
+
+Review is part of the runtime protocol, not an optional CLI mode. When a worker produces a reviewable artifact, the supervisor attaches it to the active task, creates a matching reviewer if needed, queues a review run, and marks the task as `in_review`.
+
+Reviewer output is stored as a review report. Accepted reviews complete the task and mark the artifact accepted; revision, rejection, low confidence, or CEO-input requests keep the task from silently moving forward. Use `timeline`, `status`, and `artifact list` to inspect the review path.
 
 ## Core Concepts
 

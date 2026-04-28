@@ -31,4 +31,12 @@ describe('Postgres schema', () => {
     expect(INITIAL_SCHEMA_SQL).toContain('kind TEXT');
     expect(INITIAL_SCHEMA_SQL).toContain('revision_self_report JSONB');
   });
+
+  it('keeps message-bus correlation hooks on messages', () => {
+    expect(INITIAL_SCHEMA_SQL).toContain('from_agent_id TEXT REFERENCES agents(id) ON DELETE SET NULL');
+    expect(INITIAL_SCHEMA_SQL).toContain('to_agent_id TEXT REFERENCES agents(id) ON DELETE SET NULL');
+    expect(INITIAL_SCHEMA_SQL).toContain('run_id TEXT REFERENCES runs(id) ON DELETE SET NULL');
+    expect(INITIAL_SCHEMA_SQL).toContain('task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL');
+    expect(INITIAL_SCHEMA_SQL).toContain('artifact_id TEXT REFERENCES artifacts(id) ON DELETE SET NULL');
+  });
 });

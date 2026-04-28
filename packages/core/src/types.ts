@@ -105,6 +105,11 @@ export type Message = {
   id: EntityId;
   companyId: EntityId;
   agentId?: EntityId;
+  fromAgentId?: EntityId;
+  toAgentId?: EntityId;
+  runId?: EntityId;
+  taskId?: EntityId;
+  artifactId?: EntityId;
   author: MessageAuthor;
   kind: MessageKind;
   content: string;

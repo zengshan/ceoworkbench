@@ -44,8 +44,13 @@ export class Supervisor {
     await this.options.storage.appendRunEvent(this.event('message_created', message.companyId, {
       messageId: message.id,
       agentId: agent.id,
+      fromAgentId: message.fromAgentId,
+      toAgentId: message.toAgentId,
+      runId: message.runId,
+      taskId: message.taskId,
+      artifactId: message.artifactId,
       kind: message.kind,
-    }));
+    }, message.runId, message.toAgentId ?? agent.id));
 
     const runKind = getRunKindForMessage(message.kind);
     const run: Run = {
@@ -207,6 +212,10 @@ export class Supervisor {
       id: this.options.ids.next('message'),
       companyId: sourceRun.companyId,
       agentId: agent.id,
+      fromAgentId: sourceRun.agentId,
+      toAgentId: agent.id,
+      runId: sourceRun.id,
+      taskId: task.id,
       author: 'system',
       kind: 'follow_up',
       content: [
@@ -257,6 +266,10 @@ export class Supervisor {
       id: this.options.ids.next('message'),
       companyId: sourceRun.companyId,
       agentId: sourceRun.agentId,
+      fromAgentId: sourceRun.agentId,
+      toAgentId: sourceRun.agentId,
+      runId: sourceRun.id,
+      artifactId: artifact?.id,
       author: 'system',
       kind: 'follow_up',
       content: [
@@ -389,6 +402,11 @@ export class Supervisor {
       id: this.options.ids.next('message'),
       companyId: artifact.companyId,
       agentId: result.reviewerId,
+      fromAgentId: sourceRun.agentId,
+      toAgentId: result.reviewerId,
+      runId: sourceRun.id,
+      taskId: task.id,
+      artifactId: artifact.id,
       author: 'system',
       kind: 'follow_up',
       content: [
@@ -483,7 +501,7 @@ export class Supervisor {
         updatedAt: now,
       });
       await this.options.storage.updateArtifact({ ...artifact, status: 'rejected', updatedAt: now });
-      await this.queueRevisionRun(task, artifact, reviewReport);
+      await this.queueRevisionRun(sourceRun, task, artifact, reviewReport);
     } else if (transition.type === 'block') {
       await this.options.storage.updateTask({ ...task, status: 'blocked', updatedAt: now });
       await this.options.storage.updateArtifact({ ...artifact, status: 'rejected', updatedAt: now });
@@ -527,7 +545,7 @@ export class Supervisor {
     }
   }
 
-  private async queueRevisionRun(task: Task, artifact: Artifact, reviewReport: ReviewReport) {
+  private async queueRevisionRun(sourceRun: Run, task: Task, artifact: Artifact, reviewReport: ReviewReport) {
     if (!task.assignedAgentId) {
       await this.options.storage.appendRunEvent(this.event('agent_event_emitted', task.companyId, {
         eventKind: 'revision_worker_missing',
@@ -552,6 +570,11 @@ export class Supervisor {
       id: this.options.ids.next('message'),
       companyId: task.companyId,
       agentId: worker.id,
+      fromAgentId: sourceRun.agentId,
+      toAgentId: worker.id,
+      runId: sourceRun.id,
+      taskId: task.id,
+      artifactId: artifact.id,
       author: 'system',
       kind: 'follow_up',
       content: [

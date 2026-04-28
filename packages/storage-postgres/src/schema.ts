@@ -156,4 +156,10 @@ CREATE TABLE IF NOT EXISTS decision_requests (
 );
 
 CREATE INDEX IF NOT EXISTS decision_requests_company_created_idx ON decision_requests(company_id, created_at);
+
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS from_agent_id TEXT REFERENCES agents(id) ON DELETE SET NULL;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS to_agent_id TEXT REFERENCES agents(id) ON DELETE SET NULL;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS run_id TEXT REFERENCES runs(id) ON DELETE SET NULL;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS task_id TEXT REFERENCES tasks(id) ON DELETE SET NULL;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS artifact_id TEXT REFERENCES artifacts(id) ON DELETE SET NULL;
 `;

@@ -64,9 +64,25 @@ export class PostgresStorage implements Storage {
 
   async appendMessage(message: Message) {
     await this.pool.query(
-      `INSERT INTO messages (id, company_id, agent_id, author, kind, content, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [message.id, message.companyId, message.agentId ?? null, message.author, message.kind, message.content, message.createdAt],
+      `INSERT INTO messages (
+        id, company_id, agent_id, from_agent_id, to_agent_id, run_id, task_id, artifact_id,
+        author, kind, content, created_at
+      )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+      [
+        message.id,
+        message.companyId,
+        message.agentId ?? null,
+        message.fromAgentId ?? null,
+        message.toAgentId ?? null,
+        message.runId ?? null,
+        message.taskId ?? null,
+        message.artifactId ?? null,
+        message.author,
+        message.kind,
+        message.content,
+        message.createdAt,
+      ],
     );
     return message;
   }
@@ -502,6 +518,11 @@ function rowToMessage(row: QueryResultRow): Message {
     id: row.id,
     companyId: row.company_id,
     agentId: row.agent_id ?? undefined,
+    fromAgentId: row.from_agent_id ?? undefined,
+    toAgentId: row.to_agent_id ?? undefined,
+    runId: row.run_id ?? undefined,
+    taskId: row.task_id ?? undefined,
+    artifactId: row.artifact_id ?? undefined,
     author: row.author,
     kind: row.kind,
     content: row.content,

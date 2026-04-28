@@ -276,6 +276,10 @@ describe('Supervisor', () => {
     });
     expect(messages.at(-1)).toMatchObject({
       agentId: researcher?.id,
+      fromAgentId: manager.id,
+      toAgentId: researcher?.id,
+      runId: runs[0].id,
+      taskId: tasks[0].id,
       author: 'system',
       kind: 'follow_up',
       content: expect.stringContaining('Research historical context'),
@@ -428,6 +432,7 @@ describe('Supervisor', () => {
     const tasks = await storage.listTasks(company.id);
     const messages = await storage.listMessages(company.id);
     const runs = await storage.listRuns(company.id);
+    const events = await storage.listEvents(company.id);
 
     expect(tasks.find((candidate) => candidate.id === task.id)).toMatchObject({
       status: 'in_review',
@@ -435,6 +440,11 @@ describe('Supervisor', () => {
     });
     expect(messages.at(-1)).toMatchObject({
       agentId: reviewer.id,
+      fromAgentId: worker.id,
+      toAgentId: reviewer.id,
+      runId: runs[0].id,
+      taskId: task.id,
+      artifactId: 'artifact-reviewable',
       author: 'system',
       kind: 'follow_up',
       content: expect.stringContaining('Review artifact artifact-reviewable for task task-reviewable.'),
@@ -443,6 +453,16 @@ describe('Supervisor', () => {
       agentId: reviewer.id,
       kind: 'continuation',
       status: 'queued',
+    });
+    expect(events.find((event) => event.payload.messageId === messages.at(-1)?.id)).toMatchObject({
+      runId: runs[0].id,
+      agentId: reviewer.id,
+      payload: expect.objectContaining({
+        fromAgentId: worker.id,
+        toAgentId: reviewer.id,
+        taskId: task.id,
+        artifactId: 'artifact-reviewable',
+      }),
     });
   });
 
@@ -837,6 +857,11 @@ describe('Supervisor', () => {
     });
     expect(messages.at(-1)).toMatchObject({
       agentId: worker.id,
+      fromAgentId: reviewer.id,
+      toAgentId: worker.id,
+      runId: runs[0].id,
+      taskId: 'task-in-review',
+      artifactId: 'artifact-in-review',
       author: 'system',
       kind: 'follow_up',
       content: expect.stringContaining('Revision required for artifact artifact-in-review.'),

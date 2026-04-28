@@ -29,6 +29,7 @@ export type Storage = {
   blockRun(runId: EntityId, errorMessage: string, finishedAt: string): Promise<Run>;
   completeRun(runId: EntityId, finishedAt: string): Promise<Run>;
   failRun(runId: EntityId, errorMessage: string, finishedAt: string): Promise<Run>;
+  retryRun(runId: EntityId, queuedAt: string): Promise<Run>;
   recoverExpiredRuns(now: string): Promise<Run[]>;
   createTask(task: Task): Promise<Task>;
   updateTask(task: Task): Promise<Task>;

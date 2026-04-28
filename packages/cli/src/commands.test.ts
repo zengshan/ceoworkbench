@@ -141,6 +141,26 @@ describe('ceoworkbench CLI commands', () => {
     expect(runs.filter((run) => run.status === 'completed')).toHaveLength(2);
   });
 
+  it('recovers failed runs by requeueing them for work', async () => {
+    const runtime = createFakeCliRuntime();
+
+    await runCli(['company', 'create', 'novel', '--goal', 'Publish a novel'], runtime);
+    await runCli(['agent', 'create', 'manager', '--role', 'manager'], runtime);
+    await runCli(['send', 'manager', '第一轮拆解'], runtime);
+    await runtime.storage.failRun('run-000005', 'Sandbox timed out', runtime.clock.now());
+
+    const output = await runCli(['recover'], runtime);
+    const runs = await runtime.storage.listRuns('company-000001');
+
+    expect(output).toBe('Recovered 1 failed run.');
+    expect(runs[0]).toMatchObject({
+      id: 'run-000005',
+      status: 'queued',
+      attempt: 1,
+      errorMessage: undefined,
+    });
+  });
+
   it('runs work until idle by default and streams execution progress', async () => {
     const runtime = createFakeCliRuntime();
     const progress: string[] = [];

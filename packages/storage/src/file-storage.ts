@@ -100,6 +100,12 @@ export class FileStorage extends MemoryStorage {
     return result;
   }
 
+  async retryRun(runId: EntityId, queuedAt: string) {
+    const result = await super.retryRun(runId, queuedAt);
+    await this.persist();
+    return result;
+  }
+
   async recoverExpiredRuns(now: string) {
     const result = await super.recoverExpiredRuns(now);
     if (result.length > 0) {

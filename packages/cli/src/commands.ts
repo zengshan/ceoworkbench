@@ -225,6 +225,20 @@ export async function runCli(args: string[], runtime = createCliRuntime(), optio
     return summarizeProcessedRuns(processed);
   }
 
+  if (command === 'recover') {
+    const company = await requireCurrentCompany(runtime.storage);
+    const runs = await runtime.storage.listRuns(company.id);
+    const failedRuns = runs.filter((run) => run.status === 'failed');
+
+    for (const run of failedRuns) {
+      await runtime.storage.retryRun(run.id, runtime.clock.now());
+    }
+
+    return failedRuns.length === 0
+      ? 'No failed runs to recover.'
+      : `Recovered ${failedRuns.length} failed ${failedRuns.length === 1 ? 'run' : 'runs'}.`;
+  }
+
   if (command === 'start') {
     const company = await requireCurrentCompany(runtime.storage);
     const maxTicks = Number(readOption([subcommand, ...rest].filter(Boolean), '--max-ticks') ?? 1);
@@ -346,6 +360,7 @@ function help() {
     'ceoworkbench ceo --message-file <path>',
     'ceoworkbench send <agent> <message>',
     'ceoworkbench work [--once] [--until-idle] [--ticks <count>]',
+    'ceoworkbench recover',
     'ceoworkbench start [--once] [--max-ticks <count>]',
     'ceoworkbench watch',
     'ceoworkbench status',

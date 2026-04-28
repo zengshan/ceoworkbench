@@ -154,6 +154,28 @@ export class PostgresStorage implements Storage {
     return this.updateRun(runId, 'failed', { errorMessage, finishedAt });
   }
 
+  async retryRun(runId: EntityId, queuedAt: string) {
+    const result = await this.pool.query(
+      `UPDATE runs
+       SET status = 'queued',
+           attempt = attempt + 1,
+           lease_owner = NULL,
+           lease_expires_at = NULL,
+           started_at = NULL,
+           finished_at = NULL,
+           error_message = NULL,
+           queued_at = $2
+       WHERE id = $1
+       RETURNING *`,
+      [runId, queuedAt],
+    );
+    const row = result.rows[0];
+    if (!row) {
+      throw new Error(`Run not found: ${runId}`);
+    }
+    return rowToRun(row);
+  }
+
   async recoverExpiredRuns(now: string) {
     const result = await this.pool.query(
       `UPDATE runs

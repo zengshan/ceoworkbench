@@ -38,6 +38,46 @@ describe('reporter', () => {
     expect(output).toContain('Artifacts: 0');
   });
 
+  it('excludes unassigned queued planning placeholders from the task completion denominator', async () => {
+    const storage = new MemoryStorage();
+    await storage.createCompany(company);
+    await storage.createTask({
+      id: 'task-completed',
+      companyId: company.id,
+      assignedAgentId: agent.id,
+      title: 'Completed assigned task',
+      objective: 'Do work.',
+      expectedOutput: 'Done work.',
+      status: 'completed',
+      priority: 50,
+      dependencyTaskIds: [],
+      inputArtifactIds: [],
+      outputArtifactIds: ['artifact-1'],
+      requiresReview: true,
+      createdAt: '2026-04-25T00:00:00.000Z',
+      updatedAt: '2026-04-25T00:00:00.000Z',
+    });
+    await storage.createTask({
+      id: 'task-placeholder',
+      companyId: company.id,
+      title: 'Unassigned planning placeholder',
+      objective: 'Plan work.',
+      expectedOutput: 'A future assigned task.',
+      status: 'queued',
+      priority: 50,
+      dependencyTaskIds: [],
+      inputArtifactIds: [],
+      outputArtifactIds: [],
+      requiresReview: true,
+      createdAt: '2026-04-25T00:01:00.000Z',
+      updatedAt: '2026-04-25T00:01:00.000Z',
+    });
+
+    const report = await buildStatusReport(storage, company.id);
+
+    expect(report.metrics.find((metric) => metric.label === 'Tasks')?.value).toBe('1/1 completed');
+  });
+
   it('shows agents with current state and latest activity in the status report', async () => {
     const storage = new MemoryStorage();
     await storage.createCompany(company);

@@ -98,6 +98,25 @@ export class MemoryStorage implements Storage {
     return this.updateRun(runId, { status: 'failed', errorMessage, finishedAt });
   }
 
+  async retryRun(runId: EntityId, queuedAt: string) {
+    const run = this.runs.get(runId);
+
+    if (!run) {
+      throw new Error(`Run not found: ${runId}`);
+    }
+
+    return this.updateRun(runId, {
+      status: 'queued',
+      attempt: run.attempt + 1,
+      leaseOwner: undefined,
+      leaseExpiresAt: undefined,
+      startedAt: undefined,
+      finishedAt: undefined,
+      errorMessage: undefined,
+      queuedAt,
+    });
+  }
+
   async recoverExpiredRuns(now: string) {
     const recovered: Run[] = [];
 

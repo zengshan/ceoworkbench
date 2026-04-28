@@ -16,12 +16,17 @@ export async function buildStatusReport(storage: Storage, companyId: EntityId): 
   const runningRuns = runs.filter((run) => run.status === 'running' || run.status === 'leasing').length;
   const queuedRuns = runs.filter((run) => run.status === 'queued' || run.status === 'retrying').length;
   const failedRuns = runs.filter((run) => run.status === 'failed').length;
+  const reportableTasks = tasks.filter((task) => (
+    task.status !== 'queued'
+    || Boolean(task.assignedAgentId)
+    || task.outputArtifactIds.length > 0
+  ));
 
   return {
     ...baseReport(company, 'status', `Company status: ${company.name}`, [
       metric('Goal', company.goal),
       metric('Runs', `${queuedRuns} queued, ${runningRuns} running, ${failedRuns} failed`),
-      metric('Tasks', `${tasks.filter((task) => task.status === 'completed').length}/${tasks.length} completed`),
+      metric('Tasks', `${reportableTasks.filter((task) => task.status === 'completed').length}/${reportableTasks.length} completed`),
       metric('Artifacts', String(artifacts.length)),
       metric('Agents', String(agents.length)),
       metric('Pending CEO', String(pendingDecisions), pendingDecisions ? 'requires_decision' : 'info'),

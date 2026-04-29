@@ -2,7 +2,7 @@ import type { Artifact, Company, EntityId, ReportDocument, ReportMetric, RunEven
 import type { Storage } from '../../storage/src';
 
 export async function buildStatusReport(storage: Storage, companyId: EntityId): Promise<ReportDocument> {
-  const [companies, agents, runs, events, tasks, artifacts, decisionRequests] = await Promise.all([
+  const [companies, agents, runs, events, tasks, artifacts, decisionRequests, incidents] = await Promise.all([
     storage.listCompanies(),
     storage.listAgents(companyId),
     storage.listRuns(companyId),
@@ -10,12 +10,14 @@ export async function buildStatusReport(storage: Storage, companyId: EntityId): 
     storage.listTasks(companyId),
     storage.listArtifacts(companyId),
     storage.listDecisionRequests(companyId),
+    storage.listIncidents(companyId),
   ]);
   const company = findCompany(companies, companyId);
   const pendingDecisions = decisionRequests.filter((request) => !request.resolvedAt).length;
   const runningRuns = runs.filter((run) => run.status === 'running' || run.status === 'leasing').length;
   const queuedRuns = runs.filter((run) => run.status === 'queued' || run.status === 'retrying').length;
   const failedRuns = runs.filter((run) => run.status === 'failed').length;
+  const activeIncidents = incidents.filter((incident) => incident.status === 'active').length;
   const reportableTasks = tasks.filter((task) => (
     task.status !== 'queued'
     || Boolean(task.assignedAgentId)
@@ -30,6 +32,7 @@ export async function buildStatusReport(storage: Storage, companyId: EntityId): 
       metric('Artifacts', String(artifacts.length)),
       metric('Agents', String(agents.length)),
       metric('Pending CEO', String(pendingDecisions), pendingDecisions ? 'requires_decision' : 'info'),
+      metric('Runtime incidents', String(activeIncidents), activeIncidents ? 'critical' : 'info'),
     ]),
     tables: [
       {
@@ -156,7 +159,7 @@ export async function buildDecisionReport(storage: Storage, companyId: EntityId)
 }
 
 export async function buildBriefingReport(storage: Storage, companyId: EntityId): Promise<ReportDocument> {
-  const [companies, agents, runs, events, tasks, artifacts, decisionRequests] = await Promise.all([
+  const [companies, agents, runs, events, tasks, artifacts, decisionRequests, incidents] = await Promise.all([
     storage.listCompanies(),
     storage.listAgents(companyId),
     storage.listRuns(companyId),
@@ -164,11 +167,19 @@ export async function buildBriefingReport(storage: Storage, companyId: EntityId)
     storage.listTasks(companyId),
     storage.listArtifacts(companyId),
     storage.listDecisionRequests(companyId),
+    storage.listIncidents(companyId),
   ]);
   const company = findCompany(companies, companyId);
   const completedRuns = runs.filter((run) => run.status === 'completed').length;
   const failedRuns = runs.filter((run) => run.status === 'failed').length;
   const pendingDecisions = decisionRequests.filter((request) => !request.resolvedAt).length;
+  const activeIncidents = incidents.filter((incident) => incident.status === 'active');
+  const briefingGeneratedAt = Date.now();
+  const recentlyResolvedIncidents = incidents.filter((incident) => (
+    incident.status === 'resolved'
+    && incident.resolvedAt
+    && briefingGeneratedAt - Date.parse(incident.resolvedAt) <= 24 * 60 * 60 * 1000
+  ));
   const completedTasks = tasks.filter((task) => task.status === 'completed').length;
   const report = baseReport(company, 'progress', `● CEO 简报：${company.name}`, [
     metric('目标', company.goal),
@@ -177,12 +188,31 @@ export async function buildBriefingReport(storage: Storage, companyId: EntityId)
     metric('产出文件', `${artifacts.length} 个`),
     metric('团队成员', `${agents.length} 个`),
     metric('待 CEO 决策', `${pendingDecisions} 个`, pendingDecisions ? 'requires_decision' : 'info'),
+    metric('活跃运行异常', `${activeIncidents.length} 个`, activeIncidents.length ? 'critical' : 'info'),
   ]);
   const agentNameById = new Map(agents.map((agent) => [agent.id, agent.name]));
 
   return {
     ...report,
     sections: [
+      {
+        title: '活跃运行异常',
+        body: activeIncidents.length
+          ? activeIncidents.map((incident) => `${incident.title}: ${incident.summary}`).join('\n')
+          : '当前没有活跃的基础设施运行异常。',
+      },
+      {
+        title: '最近已恢复运行异常',
+        body: recentlyResolvedIncidents.length
+          ? recentlyResolvedIncidents.map((incident) => `${incident.title}: ${incident.summary}`).join('\n')
+          : '过去24小时没有已恢复的运行异常。',
+      },
+      {
+        title: '待处理业务升级',
+        body: pendingDecisions
+          ? `当前有 ${pendingDecisions} 个业务决策/升级需要 CEO 处理。`
+          : '当前没有待处理业务升级。',
+      },
       {
         title: '关键数据',
         body: pendingDecisions

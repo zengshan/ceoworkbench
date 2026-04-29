@@ -1,8 +1,12 @@
-import { canLeaseRun, canRecoverRun, type Agent, type Artifact, type Company, type DecisionRequest, type EntityId, type MemoryEntry, type Message, type ReportDocument, type Run, type RunEvent, type Task } from '../../core/src';
+import { canLeaseRun, canRecoverRun, type Agent, type Artifact, type Company, type DecisionRequest, type EntityId, type MemoryEntry, type Message, type ReportDocument, type RuntimeIncident, type RuntimeIncidentEvent, type Run, type RunEvent, type SupervisorHeartbeat, type Task } from '../../core/src';
 import type { LeaseRunInput, Storage } from './storage';
 
 function byCreatedAt<T extends { createdAt?: string; queuedAt?: string }>(first: T, second: T) {
   return (first.createdAt ?? first.queuedAt ?? '').localeCompare(second.createdAt ?? second.queuedAt ?? '');
+}
+
+function byCreatedOrCheckedIn<T extends { createdAt?: string; queuedAt?: string; checkedInAt?: string }>(first: T, second: T) {
+  return (first.createdAt ?? first.queuedAt ?? first.checkedInAt ?? '').localeCompare(second.createdAt ?? second.queuedAt ?? second.checkedInAt ?? '');
 }
 
 function clone<T>(value: T): T {
@@ -20,6 +24,9 @@ export class MemoryStorage implements Storage {
   private readonly memoryEntries = new Map<EntityId, MemoryEntry>();
   private readonly reports = new Map<EntityId, ReportDocument>();
   private readonly decisionRequests = new Map<EntityId, DecisionRequest>();
+  private readonly incidents = new Map<EntityId, RuntimeIncident>();
+  private readonly incidentEvents = new Map<EntityId, RuntimeIncidentEvent>();
+  private readonly heartbeats = new Map<string, SupervisorHeartbeat>();
 
   async createCompany(company: Company) {
     this.companies.set(company.id, clone(company));
@@ -189,6 +196,38 @@ export class MemoryStorage implements Storage {
     return clone(resolved);
   }
 
+  async createIncident(incident: RuntimeIncident) {
+    this.incidents.set(incident.id, clone(incident));
+    return clone(incident);
+  }
+
+  async resolveIncident(incidentId: EntityId, resolvedAt: string) {
+    const incident = this.incidents.get(incidentId);
+
+    if (!incident) {
+      throw new Error(`Runtime incident not found: ${incidentId}`);
+    }
+
+    const resolved: RuntimeIncident = {
+      ...incident,
+      status: 'resolved',
+      resolvedAt,
+      updatedAt: resolvedAt,
+    };
+    this.incidents.set(resolved.id, clone(resolved));
+    return clone(resolved);
+  }
+
+  async appendIncidentEvent(event: RuntimeIncidentEvent) {
+    this.incidentEvents.set(event.id, clone(event));
+    return clone(event);
+  }
+
+  async recordSupervisorHeartbeat(heartbeat: SupervisorHeartbeat) {
+    this.heartbeats.set(`${heartbeat.companyId}:${heartbeat.leaseOwner}`, clone(heartbeat));
+    return clone(heartbeat);
+  }
+
   async listCompanies() {
     return [...this.companies.values()].sort(byCreatedAt).map(clone);
   }
@@ -227,6 +266,18 @@ export class MemoryStorage implements Storage {
 
   async listDecisionRequests(companyId: EntityId) {
     return [...this.decisionRequests.values()].filter((request) => request.companyId === companyId).sort(byCreatedAt).map(clone);
+  }
+
+  async listIncidents(companyId: EntityId) {
+    return [...this.incidents.values()].filter((incident) => incident.companyId === companyId).sort(byCreatedAt).map(clone);
+  }
+
+  async listIncidentEvents(companyId: EntityId) {
+    return [...this.incidentEvents.values()].filter((event) => event.companyId === companyId).sort(byCreatedAt).map(clone);
+  }
+
+  async listSupervisorHeartbeats(companyId: EntityId) {
+    return [...this.heartbeats.values()].filter((heartbeat) => heartbeat.companyId === companyId).sort(byCreatedOrCheckedIn).map(clone);
   }
 
   private updateRun(runId: EntityId, patch: Partial<Run>) {

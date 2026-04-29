@@ -21,6 +21,7 @@ import type { AgentAdapter } from '../../runtime/src';
 import type { AgentDelegationRequest } from '../../runtime/src';
 import { buildAgentContext } from '../../runtime/src';
 import type { Storage } from '../../storage/src';
+import { classifyRuntimeError, shouldEscalateTransientFailure } from './runtime-health';
 
 export type SupervisorOptions = {
   storage: Storage;
@@ -78,6 +79,13 @@ export class Supervisor {
 
   async tick(companyId?: string) {
     const now = this.options.clock.now();
+    if (companyId) {
+      await this.options.storage.recordSupervisorHeartbeat({
+        companyId,
+        leaseOwner: this.options.leaseOwner,
+        checkedInAt: now,
+      });
+    }
     const leaseExpiresAt = new Date(Date.parse(now) + this.leaseMs).toISOString();
     const leasedRun = await this.options.storage.leaseNextRun({
       companyId,
@@ -177,8 +185,62 @@ export class Supervisor {
         runId: runningRun.id,
         errorMessage: message,
       }, runningRun.id, runningRun.agentId));
+      await this.recordRuntimeFailureIncident(runningRun, message);
       return runningRun;
     }
+  }
+
+  private async recordRuntimeFailureIncident(run: Run, errorMessage: string) {
+    const now = this.options.clock.now();
+    const classification = classifyRuntimeError(errorMessage);
+    const events = await this.options.storage.listEvents(run.companyId);
+    const shouldCreateIncident = classification === 'persistent' || shouldEscalateTransientFailure(events, now);
+
+    if (!shouldCreateIncident) {
+      return;
+    }
+
+    const incidents = await this.options.storage.listIncidents(run.companyId);
+    const hasActiveIncident = incidents.some((incident) => (
+      incident.status === 'active'
+      && (incident.kind === 'llm.persistent_error' || incident.kind === 'llm.transient_error')
+    ));
+
+    if (hasActiveIncident) {
+      return;
+    }
+
+    const incident = {
+      id: this.options.ids.next('incident'),
+      companyId: run.companyId,
+      kind: classification === 'persistent' ? 'llm.persistent_error' as const : 'llm.transient_error' as const,
+      classification: 'persistent' as const,
+      status: 'active' as const,
+      title: classification === 'persistent'
+        ? 'AI service requires external intervention'
+        : 'AI service transient failures exceeded retry threshold',
+      summary: classification === 'persistent'
+        ? 'The agent runtime received a non-retryable AI service error. Fix credentials, billing, permissions, or configuration before more work runs.'
+        : 'The agent runtime saw 8 retryable failures within 10 minutes without an intervening success. Treat this as requiring operator intervention.',
+      sourceRunId: run.id,
+      errorMessage,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    await this.options.storage.createIncident(incident);
+    await this.options.storage.appendIncidentEvent({
+      id: this.options.ids.next('incident-event'),
+      companyId: run.companyId,
+      incidentId: incident.id,
+      type: 'incident_created',
+      payload: {
+        kind: incident.kind,
+        classification: incident.classification,
+        sourceRunId: run.id,
+      },
+      createdAt: now,
+    });
   }
 
   private async delegateTask(sourceRun: Run, delegation: AgentDelegationRequest) {

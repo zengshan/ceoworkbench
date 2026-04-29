@@ -14,6 +14,9 @@ describe('Postgres schema', () => {
       'memory_entries',
       'reports',
       'decision_requests',
+      'runtime_incidents',
+      'runtime_incident_events',
+      'supervisor_heartbeats',
     ]) {
       expect(INITIAL_SCHEMA_SQL).toContain(`CREATE TABLE IF NOT EXISTS ${table}`);
     }
@@ -24,6 +27,8 @@ describe('Postgres schema', () => {
     expect(INITIAL_SCHEMA_SQL).toContain('runs_lease_expires_idx');
     expect(INITIAL_SCHEMA_SQL).toContain('payload JSONB');
     expect(INITIAL_SCHEMA_SQL).toContain('metrics JSONB');
+    expect(INITIAL_SCHEMA_SQL).toContain('runtime_incidents_company_status_idx');
+    expect(INITIAL_SCHEMA_SQL).toContain('supervisor_heartbeats_company_checked_in_idx');
   });
 
   it('persists review protocol state on tasks and artifacts', () => {

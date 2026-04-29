@@ -50,6 +50,8 @@ export type RuntimeStorage = Storage & {
   close?: () => Promise<void>;
 };
 
+const SUPERVISOR_HEARTBEAT_STALE_MS = 5 * 60 * 1000;
+
 export function createCliRuntime(storage?: RuntimeStorage, options: CliRuntimeOptions = {}): CliRuntime {
   const env = loadCliEnv(options.env);
   const runtimeStorage = storage ?? createDefaultStorage(env);
@@ -213,6 +215,7 @@ export async function runCli(args: string[], runtime = createCliRuntime(), optio
 
   if (command === 'work') {
     const company = await requireCurrentCompany(runtime.storage);
+    await assertNoActivePersistentIncident(runtime, company.id);
     const workArgs = [subcommand, ...rest].filter(Boolean);
     const once = workArgs.includes('--once');
     const ticks = Number(readOption(workArgs, '--ticks') ?? (once ? 1 : 100));
@@ -222,7 +225,50 @@ export async function runCli(args: string[], runtime = createCliRuntime(), optio
     }
 
     const processed = await processRuns(runtime, company.id, ticks, options.onProgress);
-    return summarizeProcessedRuns(processed);
+    const failedRuns = processed === 0
+      ? (await runtime.storage.listRuns(company.id)).filter((run) => run.status === 'failed').length
+      : 0;
+    return summarizeProcessedRuns(processed, failedRuns);
+  }
+
+  if (command === 'incidents') {
+    const company = await requireCurrentCompany(runtime.storage);
+
+    if (subcommand === 'list') {
+      const incidents = await runtime.storage.listIncidents(company.id);
+      if (incidents.length === 0) {
+        return 'No runtime incidents.';
+      }
+
+      return incidents.map((incident) => [
+        incident.id,
+        incident.status,
+        incident.classification,
+        incident.kind,
+        '-',
+        incident.title,
+      ].join(' ')).join('\n');
+    }
+
+    if (subcommand === 'resolve') {
+      const incidentId = rest[0];
+      if (!incidentId) {
+        throw new Error('Usage: ceoworkbench incidents resolve <incident-id>');
+      }
+
+      await runtime.storage.resolveIncident(incidentId, runtime.clock.now());
+      await runtime.storage.appendIncidentEvent({
+        id: runtime.ids.next('incident-event'),
+        companyId: company.id,
+        incidentId,
+        type: 'incident_resolved',
+        payload: {},
+        createdAt: runtime.clock.now(),
+      });
+      return `Resolved runtime incident ${incidentId}.`;
+    }
+
+    throw new Error('Usage: ceoworkbench incidents list|resolve <incident-id>');
   }
 
   if (command === 'recover') {
@@ -241,6 +287,7 @@ export async function runCli(args: string[], runtime = createCliRuntime(), optio
 
   if (command === 'start') {
     const company = await requireCurrentCompany(runtime.storage);
+    await assertNoActivePersistentIncident(runtime, company.id);
     const maxTicks = Number(readOption([subcommand, ...rest].filter(Boolean), '--max-ticks') ?? 1);
 
     if (!Number.isInteger(maxTicks) || maxTicks < 1) {
@@ -276,6 +323,11 @@ export async function runCli(args: string[], runtime = createCliRuntime(), optio
   if (command === 'briefing') {
     const company = await requireCurrentCompany(runtime.storage);
     return renderTerminalReport(await buildBriefingReport(runtime.storage, company.id));
+  }
+
+  if (command === 'doctor') {
+    const company = await requireCurrentCompany(runtime.storage);
+    return checkRuntimeHealth(runtime, company.id);
   }
 
   if (command === 'timeline') {
@@ -361,6 +413,9 @@ function help() {
     'ceoworkbench send <agent> <message>',
     'ceoworkbench work [--once] [--until-idle] [--ticks <count>]',
     'ceoworkbench recover',
+    'ceoworkbench incidents list',
+    'ceoworkbench incidents resolve <incident-id>',
+    'ceoworkbench doctor',
     'ceoworkbench start [--once] [--max-ticks <count>]',
     'ceoworkbench watch',
     'ceoworkbench status',
@@ -371,6 +426,99 @@ function help() {
     'ceoworkbench artifact show latest',
     'ceoworkbench report [--artifacts] [--format markdown]',
   ].join('\n');
+}
+
+async function assertNoActivePersistentIncident(runtime: CliRuntime, companyId: string) {
+  const incidents = await runtime.storage.listIncidents(companyId);
+  const activePersistentIncident = incidents.find((incident) => (
+    incident.status === 'active' && incident.classification === 'persistent'
+  ));
+
+  if (activePersistentIncident) {
+    throw new Error(
+      `Cannot start work: active runtime incident ${activePersistentIncident.id} blocks AI execution. Run \`ceoworkbench incidents list\`.`,
+    );
+  }
+}
+
+async function checkRuntimeHealth(runtime: CliRuntime, companyId: string) {
+  const now = runtime.clock.now();
+  const heartbeats = await runtime.storage.listSupervisorHeartbeats(companyId);
+  const lines: string[] = [];
+
+  if (heartbeats.length === 0) {
+    lines.push('No supervisor heartbeat recorded.');
+    await createLivenessIncidentIfMissing(runtime, companyId, 'No supervisor heartbeat has been recorded for this company.');
+    return lines.join('\n');
+  }
+
+  for (const heartbeat of heartbeats) {
+    const ageMs = Date.parse(now) - Date.parse(heartbeat.checkedInAt);
+    if (ageMs > SUPERVISOR_HEARTBEAT_STALE_MS) {
+      lines.push(`STALE supervisor heartbeat for ${heartbeat.leaseOwner}: ${formatDuration(ageMs)} ago.`);
+      await createLivenessIncidentIfMissing(
+        runtime,
+        companyId,
+        `Supervisor heartbeat for ${heartbeat.leaseOwner} is stale: last check-in ${heartbeat.checkedInAt}.`,
+      );
+    } else {
+      lines.push(`OK supervisor heartbeat for ${heartbeat.leaseOwner}: ${formatDuration(ageMs)} ago.`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
+async function createLivenessIncidentIfMissing(runtime: CliRuntime, companyId: string, summary: string) {
+  const incidents = await runtime.storage.listIncidents(companyId);
+  const existing = incidents.some((incident) => (
+    incident.status === 'active' && incident.kind === 'supervisor.liveness_lost'
+  ));
+
+  if (existing) {
+    return;
+  }
+
+  const now = runtime.clock.now();
+  const incident = {
+    id: runtime.ids.next('incident'),
+    companyId,
+    kind: 'supervisor.liveness_lost' as const,
+    classification: 'persistent' as const,
+    status: 'active' as const,
+    title: 'Supervisor liveness lost',
+    summary,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  await runtime.storage.createIncident(incident);
+  await runtime.storage.appendIncidentEvent({
+    id: runtime.ids.next('incident-event'),
+    companyId,
+    incidentId: incident.id,
+    type: 'incident_created',
+    payload: {
+      kind: incident.kind,
+      classification: incident.classification,
+    },
+    createdAt: now,
+  });
+}
+
+function formatDuration(durationMs: number) {
+  const seconds = Math.max(0, Math.floor(durationMs / 1000));
+  if (seconds < 60) {
+    return `${seconds}s`;
+  }
+
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) {
+    return `${minutes}m`;
+  }
+
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h`;
 }
 
 async function createCompany(runtime: CliRuntime, name: string, goal: string) {
@@ -468,10 +616,20 @@ async function processRuns(runtime: CliRuntime, companyId: string, ticks: number
   return processed;
 }
 
-function summarizeProcessedRuns(processed: number) {
-  return processed === 0
-    ? 'No queued runs.'
-    : `Processed ${processed} ${processed === 1 ? 'run' : 'runs'}.`;
+function summarizeProcessedRuns(processed: number, failedRuns = 0) {
+  if (processed > 0) {
+    return `Processed ${processed} ${processed === 1 ? 'run' : 'runs'}.`;
+  }
+
+  if (failedRuns > 0) {
+    return [
+      'No queued runs.',
+      `${failedRuns} failed ${failedRuns === 1 ? 'run needs' : 'runs need'} recovery;`,
+      'run `ceoworkbench recover` then `ceoworkbench work`.',
+    ].join(' ');
+  }
+
+  return 'No queued runs.';
 }
 
 function formatRunLabel(run: Run, agent?: Agent) {

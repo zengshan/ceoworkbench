@@ -161,6 +161,123 @@ describe('ceoworkbench CLI commands', () => {
     });
   });
 
+  it('points operators to recover when failed runs leave work idle', async () => {
+    const runtime = createFakeCliRuntime();
+
+    await runCli(['company', 'create', 'novel', '--goal', 'Publish a novel'], runtime);
+    await runCli(['agent', 'create', 'manager', '--role', 'manager'], runtime);
+    await runCli(['send', 'manager', '第一轮拆解'], runtime);
+    await runtime.storage.failRun('run-000005', 'OpenAI Responses API failed with 402', runtime.clock.now());
+
+    const output = await runCli(['work'], runtime);
+
+    expect(output).toBe('No queued runs. 1 failed run needs recovery; run `ceoworkbench recover` then `ceoworkbench work`.');
+  });
+
+  it('refuses to start work while an active persistent runtime incident exists', async () => {
+    const runtime = createFakeCliRuntime();
+
+    await runCli(['company', 'create', 'novel', '--goal', 'Publish a novel'], runtime);
+    await runCli(['agent', 'create', 'manager', '--role', 'manager'], runtime);
+    await runCli(['send', 'manager', '第一轮拆解'], runtime);
+    await runtime.storage.createIncident({
+      id: 'incident-1',
+      companyId: 'company-000001',
+      kind: 'llm.persistent_error',
+      classification: 'persistent',
+      status: 'active',
+      title: 'AI service requires external intervention',
+      summary: 'Billing is exhausted.',
+      createdAt: runtime.clock.now(),
+      updatedAt: runtime.clock.now(),
+    });
+
+    await expect(runCli(['work', '--once'], runtime)).rejects.toThrow(
+      'Cannot start work: active runtime incident incident-1 blocks AI execution. Run `ceoworkbench incidents list`.',
+    );
+  });
+
+  it('lists and resolves runtime incidents separately from CEO decisions', async () => {
+    const runtime = createFakeCliRuntime();
+
+    await runCli(['company', 'create', 'novel', '--goal', 'Publish a novel'], runtime);
+    await runtime.storage.createIncident({
+      id: 'incident-1',
+      companyId: 'company-000001',
+      kind: 'llm.persistent_error',
+      classification: 'persistent',
+      status: 'active',
+      title: 'AI service requires external intervention',
+      summary: 'Billing is exhausted.',
+      createdAt: runtime.clock.now(),
+      updatedAt: runtime.clock.now(),
+    });
+
+    expect(await runCli(['incidents', 'list'], runtime)).toContain('incident-1 active persistent');
+    expect(await runCli(['incidents', 'resolve', 'incident-1'], runtime)).toBe('Resolved runtime incident incident-1.');
+    expect(await runCli(['incidents', 'list'], runtime)).toContain('incident-1 resolved persistent');
+    expect((await runtime.storage.listIncidentEvents('company-000001')).map((event) => event.type)).toEqual(['incident_resolved']);
+  });
+
+  it('shows active and recently resolved runtime incidents in CEO briefing', async () => {
+    const runtime = createFakeCliRuntime();
+
+    await runCli(['company', 'create', 'novel', '--goal', 'Publish a novel'], runtime);
+    await runtime.storage.createIncident({
+      id: 'incident-active',
+      companyId: 'company-000001',
+      kind: 'llm.persistent_error',
+      classification: 'persistent',
+      status: 'active',
+      title: 'AI service requires external intervention',
+      summary: 'Billing is exhausted.',
+      createdAt: runtime.clock.now(),
+      updatedAt: runtime.clock.now(),
+    });
+    await runtime.storage.createIncident({
+      id: 'incident-resolved',
+      companyId: 'company-000001',
+      kind: 'llm.persistent_error',
+      classification: 'persistent',
+      status: 'resolved',
+      title: 'AI service recovered',
+      summary: 'Billing was restored.',
+      createdAt: runtime.clock.now(),
+      updatedAt: runtime.clock.now(),
+      resolvedAt: runtime.clock.now(),
+    });
+
+    const briefing = await runCli(['briefing'], runtime);
+
+    expect(briefing).toContain('活跃运行异常');
+    expect(briefing).toContain('AI service requires external intervention');
+    expect(briefing).toContain('最近已恢复运行异常');
+    expect(briefing).toContain('AI service recovered');
+    expect(briefing).toContain('待处理业务升级');
+  });
+
+  it('doctor creates a liveness incident when supervisor heartbeat is stale', async () => {
+    const runtime = createFakeCliRuntime();
+
+    await runCli(['company', 'create', 'novel', '--goal', 'Publish a novel'], runtime);
+    await runtime.storage.recordSupervisorHeartbeat({
+      companyId: 'company-000001',
+      leaseOwner: 'cli-worker',
+      checkedInAt: '2000-01-01T00:00:00.000Z',
+    });
+
+    const output = await runCli(['doctor'], runtime);
+    const incidents = await runtime.storage.listIncidents('company-000001');
+
+    expect(output).toContain('STALE supervisor heartbeat for cli-worker');
+    expect(incidents).toHaveLength(1);
+    expect(incidents[0]).toMatchObject({
+      kind: 'supervisor.liveness_lost',
+      classification: 'persistent',
+      status: 'active',
+    });
+  });
+
   it('runs work until idle by default and streams execution progress', async () => {
     const runtime = createFakeCliRuntime();
     const progress: string[] = [];

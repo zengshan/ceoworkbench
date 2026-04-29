@@ -8,8 +8,11 @@ import type {
   MemoryEntry,
   Message,
   ReportDocument,
+  RuntimeIncident,
+  RuntimeIncidentEvent,
   Run,
   RunEvent,
+  SupervisorHeartbeat,
   Task,
 } from '../../core/src';
 import type { LeaseRunInput, Storage } from '../../storage/src';
@@ -403,6 +406,66 @@ export class PostgresStorage implements Storage {
     return rowToDecisionRequest(row);
   }
 
+  async createIncident(incident: RuntimeIncident) {
+    await this.pool.query(
+      `INSERT INTO runtime_incidents (
+        id, company_id, kind, classification, status, title, summary, source_run_id,
+        error_message, created_at, updated_at, resolved_at
+      )
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+      [
+        incident.id,
+        incident.companyId,
+        incident.kind,
+        incident.classification,
+        incident.status,
+        incident.title,
+        incident.summary,
+        incident.sourceRunId ?? null,
+        incident.errorMessage ?? null,
+        incident.createdAt,
+        incident.updatedAt,
+        incident.resolvedAt ?? null,
+      ],
+    );
+    return incident;
+  }
+
+  async resolveIncident(incidentId: EntityId, resolvedAt: string) {
+    const result = await this.pool.query(
+      `UPDATE runtime_incidents
+       SET status = 'resolved', resolved_at = $2, updated_at = $2
+       WHERE id = $1
+       RETURNING *`,
+      [incidentId, resolvedAt],
+    );
+    const row = result.rows[0];
+    if (!row) {
+      throw new Error(`Runtime incident not found: ${incidentId}`);
+    }
+    return rowToRuntimeIncident(row);
+  }
+
+  async appendIncidentEvent(event: RuntimeIncidentEvent) {
+    await this.pool.query(
+      `INSERT INTO runtime_incident_events (id, company_id, incident_id, type, payload, created_at)
+       VALUES ($1, $2, $3, $4, $5::jsonb, $6)`,
+      [event.id, event.companyId, event.incidentId, event.type, JSON.stringify(event.payload), event.createdAt],
+    );
+    return event;
+  }
+
+  async recordSupervisorHeartbeat(heartbeat: SupervisorHeartbeat) {
+    await this.pool.query(
+      `INSERT INTO supervisor_heartbeats (company_id, lease_owner, checked_in_at)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (company_id, lease_owner)
+       DO UPDATE SET checked_in_at = EXCLUDED.checked_in_at`,
+      [heartbeat.companyId, heartbeat.leaseOwner, heartbeat.checkedInAt],
+    );
+    return heartbeat;
+  }
+
   async listCompanies() {
     const result = await this.pool.query(`SELECT * FROM companies ORDER BY created_at ASC`);
     return result.rows.map(rowToCompany);
@@ -451,6 +514,21 @@ export class PostgresStorage implements Storage {
   async listDecisionRequests(companyId: EntityId) {
     const result = await this.pool.query(`SELECT * FROM decision_requests WHERE company_id = $1 ORDER BY created_at ASC`, [companyId]);
     return result.rows.map(rowToDecisionRequest);
+  }
+
+  async listIncidents(companyId: EntityId) {
+    const result = await this.pool.query(`SELECT * FROM runtime_incidents WHERE company_id = $1 ORDER BY created_at ASC`, [companyId]);
+    return result.rows.map(rowToRuntimeIncident);
+  }
+
+  async listIncidentEvents(companyId: EntityId) {
+    const result = await this.pool.query(`SELECT * FROM runtime_incident_events WHERE company_id = $1 ORDER BY created_at ASC`, [companyId]);
+    return result.rows.map(rowToRuntimeIncidentEvent);
+  }
+
+  async listSupervisorHeartbeats(companyId: EntityId) {
+    const result = await this.pool.query(`SELECT * FROM supervisor_heartbeats WHERE company_id = $1 ORDER BY checked_in_at ASC`, [companyId]);
+    return result.rows.map(rowToSupervisorHeartbeat);
   }
 
   private async updateRun(runId: EntityId, status: Run['status'], patch: { startedAt?: string; finishedAt?: string; errorMessage?: string }) {
@@ -648,6 +726,42 @@ function rowToDecisionRequest(row: QueryResultRow): DecisionRequest {
     deadlineAt: row.deadline_at ? toIso(row.deadline_at) : undefined,
     createdAt: toIso(row.created_at),
     resolvedAt: row.resolved_at ? toIso(row.resolved_at) : undefined,
+  };
+}
+
+function rowToRuntimeIncident(row: QueryResultRow): RuntimeIncident {
+  return {
+    id: row.id,
+    companyId: row.company_id,
+    kind: row.kind,
+    classification: row.classification,
+    status: row.status,
+    title: row.title,
+    summary: row.summary,
+    sourceRunId: row.source_run_id ?? undefined,
+    errorMessage: row.error_message ?? undefined,
+    createdAt: toIso(row.created_at),
+    updatedAt: toIso(row.updated_at),
+    resolvedAt: row.resolved_at ? toIso(row.resolved_at) : undefined,
+  };
+}
+
+function rowToRuntimeIncidentEvent(row: QueryResultRow): RuntimeIncidentEvent {
+  return {
+    id: row.id,
+    companyId: row.company_id,
+    incidentId: row.incident_id,
+    type: row.type,
+    payload: row.payload ?? {},
+    createdAt: toIso(row.created_at),
+  };
+}
+
+function rowToSupervisorHeartbeat(row: QueryResultRow): SupervisorHeartbeat {
+  return {
+    companyId: row.company_id,
+    leaseOwner: row.lease_owner,
+    checkedInAt: toIso(row.checked_in_at),
   };
 }
 

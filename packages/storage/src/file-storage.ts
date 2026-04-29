@@ -10,8 +10,11 @@ import type {
   MemoryEntry,
   Message,
   ReportDocument,
+  RuntimeIncident,
+  RuntimeIncidentEvent,
   Run,
   RunEvent,
+  SupervisorHeartbeat,
   Task,
 } from '../../core/src';
 import { MemoryStorage } from './memory-storage';
@@ -28,6 +31,9 @@ type FileStorageSnapshot = {
   memoryEntries: MemoryEntry[];
   reports: ReportDocument[];
   decisionRequests: DecisionRequest[];
+  incidents?: RuntimeIncident[];
+  incidentEvents?: RuntimeIncidentEvent[];
+  supervisorHeartbeats?: SupervisorHeartbeat[];
 };
 
 export class FileStorage extends MemoryStorage {
@@ -162,6 +168,30 @@ export class FileStorage extends MemoryStorage {
     return result;
   }
 
+  async createIncident(incident: RuntimeIncident) {
+    const result = await super.createIncident(incident);
+    await this.persist();
+    return result;
+  }
+
+  async resolveIncident(incidentId: EntityId, resolvedAt: string) {
+    const result = await super.resolveIncident(incidentId, resolvedAt);
+    await this.persist();
+    return result;
+  }
+
+  async appendIncidentEvent(event: RuntimeIncidentEvent) {
+    const result = await super.appendIncidentEvent(event);
+    await this.persist();
+    return result;
+  }
+
+  async recordSupervisorHeartbeat(heartbeat: SupervisorHeartbeat) {
+    const result = await super.recordSupervisorHeartbeat(heartbeat);
+    await this.persist();
+    return result;
+  }
+
   private load() {
     if (!existsSync(this.filePath)) {
       return;
@@ -201,6 +231,15 @@ export class FileStorage extends MemoryStorage {
       for (const decisionRequest of snapshot.decisionRequests ?? []) {
         void super.createDecisionRequest(decisionRequest);
       }
+      for (const incident of snapshot.incidents ?? []) {
+        void super.createIncident(incident);
+      }
+      for (const event of snapshot.incidentEvents ?? []) {
+        void super.appendIncidentEvent(event);
+      }
+      for (const heartbeat of snapshot.supervisorHeartbeats ?? []) {
+        void super.recordSupervisorHeartbeat(heartbeat);
+      }
     } finally {
       this.loading = false;
     }
@@ -223,6 +262,9 @@ export class FileStorage extends MemoryStorage {
       memoryEntries: (await Promise.all(companies.map((company) => super.listMemoryEntries(company.id)))).flat(),
       reports: (await Promise.all(companies.map((company) => super.listReports(company.id)))).flat(),
       decisionRequests: (await Promise.all(companies.map((company) => super.listDecisionRequests(company.id)))).flat(),
+      incidents: (await Promise.all(companies.map((company) => super.listIncidents(company.id)))).flat(),
+      incidentEvents: (await Promise.all(companies.map((company) => super.listIncidentEvents(company.id)))).flat(),
+      supervisorHeartbeats: (await Promise.all(companies.map((company) => super.listSupervisorHeartbeats(company.id)))).flat(),
     };
 
     await mkdir(path.dirname(this.filePath), { recursive: true });

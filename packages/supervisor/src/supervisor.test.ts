@@ -874,6 +874,68 @@ describe('Supervisor', () => {
     });
   });
 
+  it('creates a persistent runtime incident for non-retryable LLM failures', async () => {
+    const storage = new MemoryStorage();
+    await storage.createCompany(company);
+    await storage.createAgent(manager);
+    const adapter: AgentAdapter = {
+      async runStep() {
+        throw new Error('OpenAI Responses API failed with 402: Team weekly spending limit reached');
+      },
+    };
+    const supervisor = new Supervisor({
+      storage,
+      adapter,
+      clock,
+      ids: new SequentialIdGenerator(),
+      leaseOwner: 'test-worker',
+    });
+
+    await supervisor.handleMessage({
+      id: 'message-llm-failure',
+      companyId: company.id,
+      agentId: manager.id,
+      author: 'ceo',
+      kind: 'steer',
+      content: 'Continue the company work.',
+      createdAt: '2026-04-25T00:00:00.000Z',
+    }, manager);
+    await supervisor.tick(company.id);
+
+    const incidents = await storage.listIncidents(company.id);
+    expect(incidents).toHaveLength(1);
+    expect(incidents[0]).toMatchObject({
+      kind: 'llm.persistent_error',
+      classification: 'persistent',
+      status: 'active',
+      title: 'AI service requires external intervention',
+      sourceRunId: 'run-000002',
+    });
+    expect((await storage.listIncidentEvents(company.id)).map((event) => event.type)).toEqual(['incident_created']);
+  });
+
+  it('records a supervisor heartbeat before trying to lease work', async () => {
+    const storage = new MemoryStorage();
+    await storage.createCompany(company);
+    const supervisor = new Supervisor({
+      storage,
+      adapter: new FakeManagerAdapter(),
+      clock,
+      ids: new SequentialIdGenerator(),
+      leaseOwner: 'test-worker',
+    });
+
+    await supervisor.tick(company.id);
+
+    expect(await storage.listSupervisorHeartbeats(company.id)).toEqual([
+      {
+        companyId: company.id,
+        leaseOwner: 'test-worker',
+        checkedInAt: '2026-04-25T00:00:00.000Z',
+      },
+    ]);
+  });
+
   it('blocks the task when review rejects the artifact with high confidence', async () => {
     const storage = new MemoryStorage();
     await createInReviewFixture(storage);

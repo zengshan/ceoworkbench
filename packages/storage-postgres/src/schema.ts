@@ -157,6 +157,43 @@ CREATE TABLE IF NOT EXISTS decision_requests (
 
 CREATE INDEX IF NOT EXISTS decision_requests_company_created_idx ON decision_requests(company_id, created_at);
 
+CREATE TABLE IF NOT EXISTS runtime_incidents (
+  id TEXT PRIMARY KEY,
+  company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  kind TEXT NOT NULL,
+  classification TEXT NOT NULL,
+  status TEXT NOT NULL,
+  title TEXT NOT NULL,
+  summary TEXT NOT NULL,
+  source_run_id TEXT REFERENCES runs(id) ON DELETE SET NULL,
+  error_message TEXT,
+  created_at TIMESTAMPTZ NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL,
+  resolved_at TIMESTAMPTZ
+);
+
+CREATE INDEX IF NOT EXISTS runtime_incidents_company_status_idx ON runtime_incidents(company_id, status, created_at);
+
+CREATE TABLE IF NOT EXISTS runtime_incident_events (
+  id TEXT PRIMARY KEY,
+  company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  incident_id TEXT NOT NULL REFERENCES runtime_incidents(id) ON DELETE CASCADE,
+  type TEXT NOT NULL,
+  payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS runtime_incident_events_company_created_idx ON runtime_incident_events(company_id, created_at);
+
+CREATE TABLE IF NOT EXISTS supervisor_heartbeats (
+  company_id TEXT NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+  lease_owner TEXT NOT NULL,
+  checked_in_at TIMESTAMPTZ NOT NULL,
+  PRIMARY KEY (company_id, lease_owner)
+);
+
+CREATE INDEX IF NOT EXISTS supervisor_heartbeats_company_checked_in_idx ON supervisor_heartbeats(company_id, checked_in_at);
+
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS from_agent_id TEXT REFERENCES agents(id) ON DELETE SET NULL;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS to_agent_id TEXT REFERENCES agents(id) ON DELETE SET NULL;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS run_id TEXT REFERENCES runs(id) ON DELETE SET NULL;

@@ -7,8 +7,11 @@ import type {
   MemoryEntry,
   Message,
   ReportDocument,
+  RuntimeIncident,
+  RuntimeIncidentEvent,
   Run,
   RunEvent,
+  SupervisorHeartbeat,
   Task,
 } from '../../core/src';
 
@@ -39,6 +42,10 @@ export type Storage = {
   createReport(report: ReportDocument): Promise<ReportDocument>;
   createDecisionRequest(decisionRequest: DecisionRequest): Promise<DecisionRequest>;
   resolveDecisionRequest(decisionRequestId: EntityId, resolvedAt: string): Promise<DecisionRequest>;
+  createIncident(incident: RuntimeIncident): Promise<RuntimeIncident>;
+  resolveIncident(incidentId: EntityId, resolvedAt: string): Promise<RuntimeIncident>;
+  appendIncidentEvent(event: RuntimeIncidentEvent): Promise<RuntimeIncidentEvent>;
+  recordSupervisorHeartbeat(heartbeat: SupervisorHeartbeat): Promise<SupervisorHeartbeat>;
   listCompanies(): Promise<Company[]>;
   listAgents(companyId: EntityId): Promise<Agent[]>;
   listMessages(companyId: EntityId): Promise<Message[]>;
@@ -49,4 +56,7 @@ export type Storage = {
   listMemoryEntries(companyId: EntityId): Promise<MemoryEntry[]>;
   listReports(companyId: EntityId): Promise<ReportDocument[]>;
   listDecisionRequests(companyId: EntityId): Promise<DecisionRequest[]>;
+  listIncidents(companyId: EntityId): Promise<RuntimeIncident[]>;
+  listIncidentEvents(companyId: EntityId): Promise<RuntimeIncidentEvent[]>;
+  listSupervisorHeartbeats(companyId: EntityId): Promise<SupervisorHeartbeat[]>;
 };

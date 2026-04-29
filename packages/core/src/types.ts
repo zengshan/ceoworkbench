@@ -79,6 +79,45 @@ export type ReportType =
 
 export type ReportAttention = 'info' | 'notice' | 'requires_decision' | 'warning' | 'critical' | 'completed';
 
+export type RuntimeIncidentClassification = 'transient' | 'persistent';
+export type RuntimeIncidentStatus = 'active' | 'resolved';
+export type RuntimeIncidentKind =
+  | 'llm.persistent_error'
+  | 'llm.transient_error'
+  | 'supervisor.liveness_lost';
+
+export type RuntimeIncident = {
+  id: EntityId;
+  companyId: EntityId;
+  kind: RuntimeIncidentKind;
+  classification: RuntimeIncidentClassification;
+  status: RuntimeIncidentStatus;
+  title: string;
+  summary: string;
+  sourceRunId?: EntityId;
+  errorMessage?: string;
+  createdAt: ISODateTime;
+  updatedAt: ISODateTime;
+  resolvedAt?: ISODateTime;
+};
+
+export type RuntimeIncidentEventType = 'incident_created' | 'incident_resolved';
+
+export type RuntimeIncidentEvent = {
+  id: EntityId;
+  companyId: EntityId;
+  incidentId: EntityId;
+  type: RuntimeIncidentEventType;
+  payload: Record<string, unknown>;
+  createdAt: ISODateTime;
+};
+
+export type SupervisorHeartbeat = {
+  companyId: EntityId;
+  leaseOwner: string;
+  checkedInAt: ISODateTime;
+};
+
 export type Company = {
   id: EntityId;
   name: string;

@@ -299,7 +299,20 @@ describe('Supervisor', () => {
     const adapter: AgentAdapter = {
       async runStep(context) {
         return {
-          events: [],
+          events: [
+            {
+              id: `${context.run.id}-narrative-output`,
+              companyId: company.id,
+              runId: context.run.id,
+              agentId: manager.id,
+              type: 'agent_event_emitted',
+              payload: {
+                eventKind: 'narrative_output',
+                text: 'OpenAI runner returned narrative output; saved it as an artifact.',
+              },
+              createdAt: '2026-04-25T00:00:00.000Z',
+            },
+          ],
           artifacts: [
             {
               id: 'artifact-narrative',
@@ -315,7 +328,6 @@ describe('Supervisor', () => {
               updatedAt: '2026-04-25T00:00:00.000Z',
             },
           ],
-          structuredOutputFallback: true,
           blocked: false,
         };
       },
@@ -361,6 +373,80 @@ describe('Supervisor', () => {
       event.type === 'agent_event_emitted'
       && event.payload.eventKind === 'structured_output_retry_queued'
     ))).toBe(true);
+  });
+
+  it('repairs a completed legacy narrative run that missed structured-output retry queueing', async () => {
+    const storage = new MemoryStorage();
+    await storage.createCompany(company);
+    await storage.createAgent(manager);
+    await storage.appendMessage({
+      id: 'message-legacy',
+      companyId: company.id,
+      agentId: manager.id,
+      author: 'ceo',
+      kind: 'steer',
+      content: '继续',
+      createdAt: '2026-04-25T00:00:00.000Z',
+    });
+    await storage.enqueueRun({
+      id: 'run-legacy',
+      companyId: company.id,
+      agentId: manager.id,
+      triggerMessageId: 'message-legacy',
+      kind: 'ceo_steer',
+      status: 'completed',
+      priority: 100,
+      attempt: 0,
+      maxAttempts: 3,
+      queuedAt: '2026-04-25T00:00:00.000Z',
+      startedAt: '2026-04-25T00:00:00.000Z',
+      finishedAt: '2026-04-25T00:00:00.000Z',
+    });
+    await storage.appendRunEvent({
+      id: 'event-narrative',
+      companyId: company.id,
+      runId: 'run-legacy',
+      agentId: manager.id,
+      type: 'agent_event_emitted',
+      payload: {
+        eventKind: 'narrative_output',
+        text: 'OpenAI runner returned narrative output; saved it as an artifact.',
+      },
+      createdAt: '2026-04-25T00:00:00.000Z',
+    });
+    await storage.createArtifact({
+      id: 'artifact-legacy',
+      companyId: company.id,
+      runId: 'run-legacy',
+      agentId: manager.id,
+      path: 'artifacts/run-legacy/agent-output.md',
+      title: 'Agent output',
+      artifactType: 'markdown',
+      status: 'submitted',
+      content: '叙述性输出',
+      createdAt: '2026-04-25T00:00:00.000Z',
+      updatedAt: '2026-04-25T00:00:00.000Z',
+    });
+    const supervisor = new Supervisor({
+      storage,
+      adapter: new FakeManagerAdapter(),
+      clock,
+      ids: new SequentialIdGenerator(),
+      leaseOwner: 'test-worker',
+    });
+
+    const repaired = await supervisor.queueMissingStructuredOutputRetries(company.id);
+    const runs = await storage.listRuns(company.id);
+    const messages = await storage.listMessages(company.id);
+
+    expect(repaired).toBe(1);
+    expect(runs.at(-1)).toMatchObject({
+      agentId: manager.id,
+      kind: 'continuation',
+      status: 'queued',
+    });
+    expect(messages.at(-1)?.content).toContain('STRUCTURED_OUTPUT_RETRY');
+    await expect(supervisor.queueMissingStructuredOutputRetries(company.id)).resolves.toBe(0);
   });
 
   it('queues an independent reviewer run when a worker submits an artifact that requires review', async () => {

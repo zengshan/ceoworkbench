@@ -51,6 +51,7 @@ export type RuntimeStorage = Storage & {
 };
 
 const SUPERVISOR_HEARTBEAT_STALE_MS = 5 * 60 * 1000;
+const migratedStorages = new WeakSet<RuntimeStorage>();
 
 export function createCliRuntime(storage?: RuntimeStorage, options: CliRuntimeOptions = {}): CliRuntime {
   const env = loadCliEnv(options.env);
@@ -103,6 +104,8 @@ export async function runCli(args: string[], runtime = createCliRuntime(), optio
     await runtime.storage.migrate();
     return 'Postgres schema migrated.';
   }
+
+  await ensureStorageMigrated(runtime.storage);
 
   if (command === 'demo') {
     const lines = [
@@ -273,16 +276,15 @@ export async function runCli(args: string[], runtime = createCliRuntime(), optio
 
   if (command === 'recover') {
     const company = await requireCurrentCompany(runtime.storage);
-    const runs = await runtime.storage.listRuns(company.id);
-    const failedRuns = runs.filter((run) => run.status === 'failed');
+    return recoverFailedRuns(runtime, company.id);
+  }
 
-    for (const run of failedRuns) {
-      await runtime.storage.retryRun(run.id, runtime.clock.now());
-    }
+  if (command === 'repair') {
+    const company = await requireCurrentCompany(runtime.storage);
+    const healthOutput = await checkRuntimeHealth(runtime, company.id);
+    const recoverOutput = await recoverFailedRuns(runtime, company.id);
 
-    return failedRuns.length === 0
-      ? 'No failed runs to recover.'
-      : `Recovered ${failedRuns.length} failed ${failedRuns.length === 1 ? 'run' : 'runs'}.`;
+    return [healthOutput, recoverOutput].filter(Boolean).join('\n');
   }
 
   if (command === 'start') {
@@ -306,12 +308,29 @@ export async function runCli(args: string[], runtime = createCliRuntime(), optio
 
   if (command === 'watch') {
     const company = await requireCurrentCompany(runtime.storage);
-    const events = await runtime.storage.listEvents(company.id);
-    return events.map((event) => `* ${event.type} ${event.runId ? `(${event.runId})` : ''}`.trim()).join('\n');
+    return renderEventList(runtime, company.id);
   }
 
   if (command === 'status') {
     const company = await requireCurrentCompany(runtime.storage);
+    const statusArgs = [subcommand, ...rest].filter(Boolean);
+
+    if (statusArgs.includes('--team')) {
+      return renderTerminalReport(await buildStatusReport(runtime.storage, company.id));
+    }
+
+    if (statusArgs.includes('--timeline')) {
+      return renderTerminalReport(await buildTimelineReport(runtime.storage, company.id));
+    }
+
+    if (statusArgs.includes('--briefing')) {
+      return renderTerminalReport(await buildBriefingReport(runtime.storage, company.id));
+    }
+
+    if (statusArgs.includes('--events')) {
+      return renderEventList(runtime, company.id);
+    }
+
     return renderTerminalReport(await buildStatusReport(runtime.storage, company.id));
   }
 
@@ -397,35 +416,54 @@ export async function runCli(args: string[], runtime = createCliRuntime(), optio
   throw new Error(`Unknown command: ${args.join(' ')}`);
 }
 
+async function ensureStorageMigrated(storage: RuntimeStorage) {
+  if (!storage.migrate || migratedStorages.has(storage)) {
+    return;
+  }
+
+  await storage.migrate();
+  migratedStorages.add(storage);
+}
+
 function help() {
   return [
+    'CEO Workbench',
+    '',
+    'Start:',
+    'ceoworkbench wizard [resume] [--verbose]',
     'ceoworkbench init',
-    'ceoworkbench db migrate',
     'ceoworkbench demo',
-    'ceoworkbench wizard',
-    'ceoworkbench wizard [--verbose]',
-    'ceoworkbench wizard resume [--verbose]',
-    'ceoworkbench company init <name> --goal <goal>',
-    'ceoworkbench company create <name> --goal <goal>',
-    'ceoworkbench agent create <name> --role manager',
+    '',
+    'Operate:',
     'ceoworkbench ceo <message>',
-    'ceoworkbench ceo --message-file <path>',
-    'ceoworkbench send <agent> <message>',
     'ceoworkbench work [--once] [--until-idle] [--ticks <count>]',
-    'ceoworkbench recover',
-    'ceoworkbench incidents list',
-    'ceoworkbench incidents resolve <incident-id>',
-    'ceoworkbench doctor',
-    'ceoworkbench start [--once] [--max-ticks <count>]',
-    'ceoworkbench watch',
-    'ceoworkbench status',
-    'ceoworkbench team',
-    'ceoworkbench briefing',
-    'ceoworkbench timeline',
-    'ceoworkbench artifact list',
-    'ceoworkbench artifact show latest',
-    'ceoworkbench report [--artifacts] [--format markdown]',
+    'ceoworkbench repair',
+    '',
+    'Inspect:',
+    'ceoworkbench status [--team|--timeline|--briefing|--events]',
+    'ceoworkbench artifact list|show latest',
+    'ceoworkbench report [--artifacts|--decisions] [--format markdown]',
+    '',
+    'Advanced commands still work but are hidden from help.',
   ].join('\n');
+}
+
+async function recoverFailedRuns(runtime: CliRuntime, companyId: string) {
+  const runs = await runtime.storage.listRuns(companyId);
+  const failedRuns = runs.filter((run) => run.status === 'failed');
+
+  for (const run of failedRuns) {
+    await runtime.storage.retryRun(run.id, runtime.clock.now());
+  }
+
+  return failedRuns.length === 0
+    ? 'No failed runs to recover.'
+    : `Recovered ${failedRuns.length} failed ${failedRuns.length === 1 ? 'run' : 'runs'}.`;
+}
+
+async function renderEventList(runtime: CliRuntime, companyId: string) {
+  const events = await runtime.storage.listEvents(companyId);
+  return events.map((event) => `* ${event.type} ${event.runId ? `(${event.runId})` : ''}`.trim()).join('\n');
 }
 
 async function assertNoActivePersistentIncident(runtime: CliRuntime, companyId: string) {
@@ -579,6 +617,13 @@ async function processRuns(runtime: CliRuntime, companyId: string, ticks: number
     const nextRun = (await runtime.storage.listRuns(companyId)).find((run) => run.status === 'queued');
 
     if (!nextRun) {
+      const repaired = await runtime.supervisor.queueMissingStructuredOutputRetries(companyId);
+      if (repaired > 0) {
+        onProgress?.(`[work] queued ${repaired} structured-output ${repaired === 1 ? 'retry' : 'retries'} for narrative output`);
+        tick -= 1;
+        continue;
+      }
+
       break;
     }
 
@@ -625,7 +670,7 @@ function summarizeProcessedRuns(processed: number, failedRuns = 0) {
     return [
       'No queued runs.',
       `${failedRuns} failed ${failedRuns === 1 ? 'run needs' : 'runs need'} recovery;`,
-      'run `ceoworkbench recover` then `ceoworkbench work`.',
+      'run `ceoworkbench repair` then `ceoworkbench work`.',
     ].join(' ');
   }
 

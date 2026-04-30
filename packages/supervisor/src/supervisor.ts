@@ -190,6 +190,45 @@ export class Supervisor {
     }
   }
 
+  async queueMissingStructuredOutputRetries(companyId: string) {
+    const [runs, messages, events, artifacts] = await Promise.all([
+      this.options.storage.listRuns(companyId),
+      this.options.storage.listMessages(companyId),
+      this.options.storage.listEvents(companyId),
+      this.options.storage.listArtifacts(companyId),
+    ]);
+    const narrativeRunIds = new Set(events
+      .filter((event) => event.type === 'agent_event_emitted' && event.payload.eventKind === 'narrative_output')
+      .map((event) => event.runId)
+      .filter(Boolean));
+    const retriedRunIds = new Set(events
+      .filter((event) => event.type === 'agent_event_emitted' && event.payload.eventKind === 'structured_output_retry_queued')
+      .map((event) => event.payload.sourceRunId)
+      .filter(Boolean));
+
+    let repaired = 0;
+
+    for (const run of runs) {
+      if (run.status !== 'completed' || !narrativeRunIds.has(run.id) || retriedRunIds.has(run.id)) {
+        continue;
+      }
+
+      const sourceMessage = messages.find((message) => message.id === run.triggerMessageId);
+      if (sourceMessage?.content.includes('STRUCTURED_OUTPUT_RETRY')) {
+        continue;
+      }
+
+      const artifact = artifacts.find((candidate) => (
+        candidate.runId === run.id && candidate.path.endsWith('/agent-output.md')
+      ));
+
+      await this.queueStructuredOutputRetry(run, sourceMessage, artifact);
+      repaired += 1;
+    }
+
+    return repaired;
+  }
+
   private async recordRuntimeFailureIncident(run: Run, errorMessage: string) {
     const now = this.options.clock.now();
     const classification = classifyRuntimeError(errorMessage);
@@ -305,7 +344,11 @@ export class Supervisor {
   }
 
   private shouldRetryStructuredOutput(result: Awaited<ReturnType<AgentAdapter['runStep']>>, sourceMessage?: Message) {
-    if (!result.structuredOutputFallback) {
+    const hasNarrativeFallbackEvent = result.events.some((event) => (
+      event.type === 'agent_event_emitted' && event.payload.eventKind === 'narrative_output'
+    ));
+
+    if (!result.structuredOutputFallback && !hasNarrativeFallbackEvent) {
       return false;
     }
 

@@ -1,7 +1,7 @@
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { SandboxRunInput, SandboxRuntime } from '../../sandbox-podman/src';
 import { createCliRuntime, runCli } from './commands';
 
@@ -171,7 +171,33 @@ describe('ceoworkbench CLI commands', () => {
 
     const output = await runCli(['work'], runtime);
 
-    expect(output).toBe('No queued runs. 1 failed run needs recovery; run `ceoworkbench recover` then `ceoworkbench work`.');
+    expect(output).toBe('No queued runs. 1 failed run needs recovery; run `ceoworkbench repair` then `ceoworkbench work`.');
+  });
+
+  it('auto-migrates database storage before work checks runtime incidents', async () => {
+    const runtime = createFakeCliRuntime();
+    await runCli(['company', 'create', 'novel', '--goal', 'Publish a novel'], runtime);
+    await runCli(['agent', 'create', 'manager', '--role', 'manager'], runtime);
+    await runCli(['send', 'manager', '第一轮拆解'], runtime);
+
+    const migrate = vi.fn(async () => undefined);
+    let migrated = false;
+    const listIncidents = runtime.storage.listIncidents.bind(runtime.storage);
+    runtime.storage.migrate = async () => {
+      migrated = true;
+      await migrate();
+    };
+    runtime.storage.listIncidents = async (companyId) => {
+      if (!migrated) {
+        throw new Error('relation "runtime_incidents" does not exist');
+      }
+
+      return listIncidents(companyId);
+    };
+    const output = await runCli(['work', '--once'], runtime);
+
+    expect(output).toContain('Processed 1 run.');
+    expect(migrate).toHaveBeenCalled();
   });
 
   it('refuses to start work while an active persistent runtime incident exists', async () => {
@@ -256,20 +282,31 @@ describe('ceoworkbench CLI commands', () => {
     expect(briefing).toContain('待处理业务升级');
   });
 
-  it('doctor creates a liveness incident when supervisor heartbeat is stale', async () => {
+  it('repair checks runtime health and recovers failed runs in one command', async () => {
     const runtime = createFakeCliRuntime();
 
     await runCli(['company', 'create', 'novel', '--goal', 'Publish a novel'], runtime);
+    await runCli(['agent', 'create', 'manager', '--role', 'manager'], runtime);
+    await runCli(['send', 'manager', '第一轮拆解'], runtime);
+    await runtime.storage.failRun('run-000005', 'Sandbox timed out', runtime.clock.now());
     await runtime.storage.recordSupervisorHeartbeat({
       companyId: 'company-000001',
       leaseOwner: 'cli-worker',
       checkedInAt: '2000-01-01T00:00:00.000Z',
     });
 
-    const output = await runCli(['doctor'], runtime);
+    const output = await runCli(['repair'], runtime);
     const incidents = await runtime.storage.listIncidents('company-000001');
+    const runs = await runtime.storage.listRuns('company-000001');
 
     expect(output).toContain('STALE supervisor heartbeat for cli-worker');
+    expect(output).toContain('Recovered 1 failed run.');
+    expect(runs[0]).toMatchObject({
+      id: 'run-000005',
+      status: 'queued',
+      attempt: 1,
+      errorMessage: undefined,
+    });
     expect(incidents).toHaveLength(1);
     expect(incidents[0]).toMatchObject({
       kind: 'supervisor.liveness_lost',
@@ -453,8 +490,18 @@ describe('ceoworkbench CLI commands', () => {
     expect(messages.at(-1)?.content).toBe(message);
   });
 
-  it('lists wizard in help output', async () => {
-    expect(await runCli(['help'], createFakeCliRuntime())).toContain('ceoworkbench wizard');
+  it('shows a concise intent-oriented help output with advanced aliases hidden', async () => {
+    const output = await runCli(['help'], createFakeCliRuntime());
+
+    expect(output).toContain('ceoworkbench wizard [resume] [--verbose]');
+    expect(output).toContain('ceoworkbench status [--team|--timeline|--briefing|--events]');
+    expect(output).toContain('ceoworkbench repair');
+    expect(output).not.toContain('ceoworkbench team');
+    expect(output).not.toContain('ceoworkbench briefing');
+    expect(output).not.toContain('ceoworkbench timeline');
+    expect(output).not.toContain('ceoworkbench watch');
+    expect(output).not.toContain('ceoworkbench doctor');
+    expect(output).not.toContain('ceoworkbench recover');
   });
 
   it('lets the manager auto-staff specialist workers for a historical novel goal', async () => {
@@ -467,9 +514,9 @@ describe('ceoworkbench CLI commands', () => {
 
     const agents = await runtime.storage.listAgents('company-000001');
     const runs = await runtime.storage.listRuns('company-000001');
-    const teamOutput = await runCli(['team'], runtime);
-    const watchOutput = await runCli(['watch'], runtime);
-    const timelineOutput = await runCli(['timeline'], runtime);
+    const teamOutput = await runCli(['status', '--team'], runtime);
+    const watchOutput = await runCli(['status', '--events'], runtime);
+    const timelineOutput = await runCli(['status', '--timeline'], runtime);
 
     expect(agents.map((agent) => agent.name)).toEqual([
       'manager',
